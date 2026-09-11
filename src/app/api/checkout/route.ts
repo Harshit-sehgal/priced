@@ -6,6 +6,7 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { rateLimit } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
 import { logEvent } from "@/lib/logger";
+import { clientIp } from "@/lib/client-ip";
 
 export async function POST(req: Request) {
   // JSON-only: cross-origin form posts cannot produce this content type (§46 CSRF).
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   }
   if (!user) return NextResponse.json({ error: "login_required" }, { status: 401 });
 
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
   const rlUser = await rateLimit(`checkout:${user.id}`, 20, 60_000);
   const rlIp = await rateLimit(`checkout:ip:${ip}`, 30, 60_000);
   if (!rlUser || !rlIp) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
@@ -103,6 +104,9 @@ export async function POST(req: Request) {
       amountCents: quote.nextPriceCents,
       successUrl: `${base}/checkout/return?quote_id=${quote.id}`,
       cancelUrl: `${base}/domain/${quote.domain}?checkout=cancelled`,
+      // One quote maps to one provider session: retries for the same quote
+      // replay the same key so a timed-out create cannot mint an orphan.
+      idempotencyKey: quote.id,
     });
     // First writer wins — a concurrent second request reuses this session.
     const stored = await setQuoteCheckout({
