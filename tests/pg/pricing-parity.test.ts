@@ -24,9 +24,12 @@ import pg from "pg";
 import { quoteFor } from "../../src/lib/game.ts";
 
 const DOCKER_IMAGE = "postgres:16-alpine";
-const CONTAINER = "ipt-pricing-parity-test";
-const PORT = 5545;
-const POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${PORT}/ipt`;
+// Unique per run, host port assigned by Docker. A fixed name + port made two
+// concurrent runs kill each other's database (the pre-boot `docker rm -f` hits
+// the shared name), failing every test at once and looking exactly like a
+// money-path regression. See the same note in finalize-rpc.test.ts.
+const CONTAINER = `ipt-pricing-parity-test-${process.pid}-${randomUUID().slice(0, 8)}`;
+let POSTGRES_URL = "";
 
 function sh(cmd, ...args) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -84,14 +87,17 @@ let client;
 
 test.before(async () => {
   if (!hasDocker) return;
-  spawnSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
   sh(
     "docker", "run", "-d", "--name", CONTAINER,
     "-e", "POSTGRES_USER=ipt", "-e", "POSTGRES_PASSWORD=ipt", "-e", "POSTGRES_DB=ipt",
-    "-p", `${PORT}:5432`,
+    "-p", "0:5432", // Docker picks a free host port — no port races
     "--health-cmd", "pg_isready -U ipt", "--health-interval=1s", "--health-timeout=1s", "--health-retries=15",
     DOCKER_IMAGE,
   );
+  const mapped = sh("docker", "port", CONTAINER, "5432/tcp").trim().split("\n")[0];
+  const hostPort = mapped.slice(mapped.lastIndexOf(":") + 1);
+  if (!/^\d+$/.test(hostPort)) throw new Error(`could not resolve mapped port from "${mapped}"`);
+  POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${hostPort}/ipt`;
   client = await connectPool();
   await runMigrations(client);
 });

@@ -21,9 +21,13 @@ import { readdir, readFile } from "node:fs/promises";
 import pg from "pg";
 
 const IMAGE = "postgres:16-alpine";
+// Unique per run with Docker-assigned host ports. Fixed names/ports let two
+// concurrent runs (CI job + a developer, or two CI jobs) delete each other's
+// database mid-check and report drift that does not exist.
+const RUN_ID = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 const TARGETS = [
-  { name: "migrations", container: "ipt-equiv-migrations", port: 5571 },
-  { name: "portable-db", container: "ipt-equiv-portable", port: 5572 },
+  { name: "migrations", container: `ipt-equiv-migrations-${RUN_ID}`, port: 0 },
+  { name: "portable-db", container: `ipt-equiv-portable-${RUN_ID}`, port: 0 },
 ];
 
 function dockerAvailable() {
@@ -34,13 +38,16 @@ function sh(cmd, ...args) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
-function boot({ container, port }) {
-  spawnSync("docker", ["rm", "-f", container], { stdio: "ignore" });
+function boot(target) {
   sh(
-    "docker", "run", "-d", "--name", container,
+    "docker", "run", "-d", "--name", target.container,
     "-e", "POSTGRES_USER=ipt", "-e", "POSTGRES_PASSWORD=ipt", "-e", "POSTGRES_DB=ipt",
-    "-p", `${port}:5432`, IMAGE,
+    "-p", "0:5432", IMAGE,
   );
+  const mapped = sh("docker", "port", target.container, "5432/tcp").trim().split("\n")[0];
+  const hostPort = mapped.slice(mapped.lastIndexOf(":") + 1);
+  if (!/^\d+$/.test(hostPort)) throw new Error(`could not resolve mapped port from "${mapped}"`);
+  target.port = Number(hostPort);
 }
 
 async function connect(port, retries = 60) {

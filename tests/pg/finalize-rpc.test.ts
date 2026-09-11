@@ -14,9 +14,16 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 
 const DOCKER_IMAGE = "postgres:16-alpine";
-const CONTAINER = "ipt-finalize-rpc-test";
-const PORT = 5544;
-const POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${PORT}/ipt`;
+// Unique per run, and the host port is assigned by Docker (`-p 0:5432`).
+//
+// A FIXED name + port made concurrent runs destroy each other: the harness
+// `docker rm -f`s the name before booting, so a second run killed the first
+// run's database and every test in it failed at once. That reads exactly like
+// "the money path is broken" — the most expensive possible false alarm, and it
+// matters more now that CI runs `test:pg` and `test:schema` as gates. A red
+// build nobody trusts is worse than no build.
+const CONTAINER = `ipt-finalize-rpc-test-${process.pid}-${randomUUID().slice(0, 8)}`;
+let POSTGRES_URL = "";
 
 function sh(cmd, ...args) {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
@@ -83,15 +90,20 @@ let client;
 
 test.before(async () => {
   if (!hasDocker) return;
-  // idempotent cleanup of any stale run, then boot fresh
-  spawnSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
+  // The name is unique per run, so there is no stale container to remove and
+  // nothing another concurrent run could be using.
   sh(
     "docker", "run", "-d", "--name", CONTAINER,
     "-e", "POSTGRES_USER=ipt", "-e", "POSTGRES_PASSWORD=ipt", "-e", "POSTGRES_DB=ipt",
-    "-p", `${PORT}:5432`,
+    "-p", "0:5432", // let Docker pick a free host port — no port races either
     "--health-cmd", "pg_isready -U ipt", "--health-interval=1s", "--health-timeout=1s", "--health-retries=15",
     DOCKER_IMAGE,
   );
+  // "0.0.0.0:49154" (and possibly a second IPv6 line) -> take the port.
+  const mapped = sh("docker", "port", CONTAINER, "5432/tcp").trim().split("\n")[0];
+  const hostPort = mapped.slice(mapped.lastIndexOf(":") + 1);
+  if (!/^\d+$/.test(hostPort)) throw new Error(`could not resolve mapped port from "${mapped}"`);
+  POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${hostPort}/ipt`;
   client = await connectPool();
   await runMigrations(client);
 });
