@@ -7,6 +7,7 @@ import {
   ANALYTICS_SESSION_LIMIT,
   ANALYTICS_WINDOW_MS,
   sanitizeAnalyticsProps,
+  withinLocalTelemetryBudget,
 } from "@/lib/view-events";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,15 @@ export async function POST(req: Request) {
   const ct = req.headers.get("content-type") ?? "";
   if (!ct.startsWith("application/json")) {
     return NextResponse.json({ error: "unsupported_media_type" }, { status: 415 });
+  }
+
+  // In-process budget FIRST, before any network call. The Redis limiter below
+  // shares one free-tier Upstash database with the quote/checkout/handle
+  // limiters, which fail CLOSED — so an unauthenticated flood that exhausts
+  // the command quota would 429 the money path. Even a rejected request costs
+  // a command, so the cheap local gate has to come first.
+  if (!withinLocalTelemetryBudget("analytics")) {
+    return NextResponse.json({ ok: true, dropped: "rate_limited" }, { status: 429 });
   }
 
   // IP limit before the body is read: shed load as cheaply as possible.

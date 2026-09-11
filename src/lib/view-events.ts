@@ -35,6 +35,56 @@ export const VIEW_DEDUP_WINDOW_MS = 5 * 60_000;
 export const VIEW_IP_LIMIT = 60;
 export const VIEW_IP_WINDOW_MS = 60_000;
 
+/**
+ * Per-instance, in-memory budget for anonymous telemetry. No network at all.
+ *
+ * WHY: the view and analytics guards spend Upstash commands on unauthenticated
+ * traffic, and they share ONE free-tier Redis with the quote / checkout /
+ * handle limiters — which fail CLOSED. Without a local gate, a flood of page
+ * views or /api/analytics POSTs can exhaust the shared command quota, and once
+ * Upstash starts refusing, `rateLimit` returns false for everything: the money
+ * path 429s. Telemetry must never be able to take down checkout.
+ *
+ * This gate runs BEFORE the first Redis call, so a flood is shed at ~zero cost
+ * and spends no quota. It is deliberately generous — it is a blast-radius cap,
+ * not the real limiter. Being per-instance and memory-only it resets on cold
+ * start, which is fine: its only job is to bound what one instance can spend.
+ */
+export const TELEMETRY_LOCAL_LIMIT = 300;
+export const TELEMETRY_LOCAL_WINDOW_MS = 60_000;
+
+type LocalBucket = { count: number; resetAt: number };
+const g = globalThis as unknown as { __iptTelemetryLocal?: Map<string, LocalBucket> };
+function localBuckets(): Map<string, LocalBucket> {
+  if (!g.__iptTelemetryLocal) g.__iptTelemetryLocal = new Map();
+  return g.__iptTelemetryLocal;
+}
+
+/** Test hook: clear the in-process telemetry budget. */
+export function resetTelemetryBudgetForTests(): void {
+  g.__iptTelemetryLocal?.clear();
+}
+
+/**
+ * True when this instance may still spend a Redis command on telemetry.
+ * Fails CLOSED (returns false) once the local budget is exhausted — dropping a
+ * view is always preferable to risking the money path.
+ */
+export function withinLocalTelemetryBudget(dimension: string): boolean {
+  const now = Date.now();
+  const buckets = localBuckets();
+  // Bound the map itself: an unbounded key space would be its own memory leak.
+  if (buckets.size > 5_000) buckets.clear();
+  const bucket = buckets.get(dimension);
+  if (!bucket || bucket.resetAt <= now) {
+    buckets.set(dimension, { count: 1, resetAt: now + TELEMETRY_LOCAL_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= TELEMETRY_LOCAL_LIMIT) return false;
+  bucket.count += 1;
+  return true;
+}
+
 // `/api/analytics` limits. Analytics is high-volume by nature, so these are
 // generous enough that a real browsing session never trips them and tight
 // enough that one host cannot fill the free-tier database: 120 rows/min is
@@ -76,6 +126,9 @@ export async function shouldCountView(args: {
   userAgent: string | null | undefined;
 }): Promise<boolean> {
   if (isBotUserAgent(args.userAgent)) return false;
+  // Spend no Redis command at all once this instance's telemetry budget is
+  // gone; the shared limiter is what checkout depends on. See the constant.
+  if (!withinLocalTelemetryBudget("view")) return false;
   const ip = args.ip?.trim() || "unknown";
   const resource = args.resource.slice(0, 253).toLowerCase();
   // Dedup first: a repeat view short-circuits before the per-IP budget, so the
