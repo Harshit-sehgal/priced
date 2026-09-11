@@ -1,0 +1,29 @@
+{
+  "skill_name": "money-path-review",
+  "evals": [
+    {
+      "id": 0,
+      "name": "toctou-finalizer-refunds-funded-sale",
+      "prompt": "Review the payment code in fixture-a (finalize.sql and handler.ts) for defects that could cause money to be lost, double-spent, or refunded incorrectly.",
+      "seeded_bug": "finalize.sql looks up seat_sales by payment_id BEFORE `select ... for update` and never repeats it after the lock. A concurrent duplicate delivery of an already-finalized payment wakes to the bumped version and raises STALE_QUOTE, which handler.ts refunds -- so the buyer keeps the seat AND gets their money back.",
+      "assertions": [
+        "Identifies that the idempotency lookup on seat_sales runs before the FOR UPDATE lock and is never re-checked after it",
+        "Describes the concurrent-duplicate-delivery scenario that reaches STALE_QUOTE for an already-finalized payment",
+        "Connects it to the money consequence: handler.ts refunds a sale that is already funded",
+        "Rates the finding high or critical severity"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "retryable-500-discards-its-own-retry",
+      "prompt": "Review the signed webhook handler in fixture-b for defects that could cause money to be lost or a payment event silently dropped, given its documented 200/500 retry contract.",
+      "seeded_bug": "The dispute branch returns 500 to request redelivery but never moves the event row off status \"received\". The duplicate handler answers any \"received\" row with 200 {duplicate, inProgress}, so the requested retry is terminally acknowledged and the chargeback is never recorded -- logged only at info level.",
+      "assertions": [
+        "Identifies that the dispute-store 500 path leaves the event row on status \"received\"",
+        "Traces the next delivery to the \"received\" branch and notes it returns HTTP 200, discarding the retry",
+        "Contrasts with the processPayment catch block, which marks \"error\" before its 500",
+        "Rates the finding high or critical severity"
+      ]
+    }
+  ]
+}
