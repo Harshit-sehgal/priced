@@ -1,6 +1,7 @@
 import { listMarket, listRecentSales } from "@/lib/repo";
 import { rateLimit } from "@/lib/ratelimit";
 import { logEvent } from "@/lib/logger";
+import { clientIp } from "@/lib/client-ip";
 
 export const dynamic = "force-dynamic";
 
@@ -45,7 +46,7 @@ export async function GET(req: Request) {
     );
   }
 
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
   if (!(await rateLimit(`pulse:ip:${ip}`, PULSE_IP_LIMIT, PULSE_WINDOW_MS))) {
     return Response.json({ error: "rate_limited" }, { status: 429, headers: { "cache-control": "no-store" } });
   }

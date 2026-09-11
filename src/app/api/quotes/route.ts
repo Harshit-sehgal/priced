@@ -3,9 +3,10 @@ import { createQuote } from "@/lib/repo";
 import { getViewer, demoViewer } from "@/lib/auth";
 import { rateLimit } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
+import { clientIp } from "@/lib/client-ip";
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
 
   // JSON-only: cross-origin form posts cannot produce this content type (§46 CSRF).
   const contentType = req.headers.get("content-type") ?? "";

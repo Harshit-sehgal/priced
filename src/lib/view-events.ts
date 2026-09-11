@@ -19,6 +19,7 @@
 import "server-only";
 
 import { rateLimit } from "./ratelimit.ts";
+import { clientIp } from "./client-ip.ts";
 
 /** Server-rendered view events guarded by {@link persistViewEvent}. */
 export type ViewEvent = "profile_viewed" | "tag_viewed" | "share_visit";
@@ -143,7 +144,7 @@ export async function persistViewEvent(args: {
     // module graph of anything that merely imports the pure guards above.
     const { headers } = await import("next/headers");
     const h = await headers();
-    const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const ip = clientIp(h);
     const countable = await shouldCountView({
       event: args.event,
       resource: args.resource,

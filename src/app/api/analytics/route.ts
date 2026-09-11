@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isAllowedAnalyticsEvent } from "@/lib/analytics";
 import { rateLimit } from "@/lib/ratelimit";
+import { clientIp } from "@/lib/client-ip";
 import {
   ANALYTICS_IP_LIMIT,
   ANALYTICS_SESSION_LIMIT,
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
 // Nothing is logged per dropped request on purpose — logging a request flood
 // just converts it into a log flood.
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
 
   const ct = req.headers.get("content-type") ?? "";
   if (!ct.startsWith("application/json")) {
