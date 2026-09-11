@@ -119,6 +119,13 @@ export type WebhookVerifyHeaders = {
   webhookTimestamp?: string | null;
 };
 
+export type RefundRequest = {
+  paymentId: string;
+  reason: string;
+  /** Idempotency scope: one ledger claim maps to one provider refund call. */
+  idempotencyKey: string;
+};
+
 export interface PaymentProvider {
   readonly name: string;
   createCheckout(args: {
@@ -129,9 +136,11 @@ export interface PaymentProvider {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
+    /** Idempotency scope: retries for the same quote reuse one provider session. */
+    idempotencyKey: string;
   }): Promise<CheckoutResult>;
   verifyWebhook(payload: string, signature: string | null, headers?: WebhookVerifyHeaders): WebhookVerification;
-  refundPayment(paymentId: string, reason: string): Promise<RefundResult>;
+  refundPayment(request: RefundRequest): Promise<RefundResult>;
 }
 
 export class ProviderNotConfiguredError extends Error {
@@ -224,14 +233,14 @@ class DemoProvider implements PaymentProvider {
 type StripeLike = {
   checkout: {
     sessions: {
-      create(args: Record<string, unknown>): Promise<{ id: string; url: string | null }>;
+      create(args: Record<string, unknown>, opts?: Record<string, unknown>): Promise<{ id: string; url: string | null }>;
     };
   };
   paymentIntents: {
     get(id: string): Promise<{ id: string; status: string; amount: number; metadata: Record<string, string> }>;
     refund?: never;
   };
-  refunds: { create(args: { payment_intent: string; reason?: string }): Promise<{ id: string }> };
+  refunds: { create(args: { payment_intent: string; reason?: string }, opts?: Record<string, unknown>): Promise<{ id: string }> };
   webhooks: { constructEvent(payload: string, sig: string, secret: string): { id: string; type: string; data: { object: Record<string, unknown> } } };
 };
 
@@ -251,10 +260,12 @@ class StripeProvider implements PaymentProvider {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
+    idempotencyKey: string;
   }): Promise<CheckoutResult> {
     const stripe = await loadStripe();
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
       line_items: [
         {
           quantity: 1,
@@ -281,7 +292,11 @@ class StripeProvider implements PaymentProvider {
       payment_intent_data: { metadata: { quote_id: args.quoteId, amount_cents: String(args.amountCents) } },
       success_url: args.successUrl,
       cancel_url: args.cancelUrl,
-    });
+      },
+      // One quote maps to one provider session: a timed-out create that the
+      // client retries must not mint a second payable session.
+      { idempotencyKey: `checkout:${args.idempotencyKey}` },
+    );
     return { checkoutUrl: session.url, providerPaymentId: session.id, mode: "charge" };
   }
 
@@ -292,10 +307,14 @@ class StripeProvider implements PaymentProvider {
     return verifyStripeWebhookSync(payload, signature, secret);
   }
 
-  async refundPayment(paymentId: string): Promise<RefundResult> {
+  async refundPayment(request: RefundRequest): Promise<RefundResult> {
     try {
       const stripe = await loadStripe();
-      await stripe.refunds.create({ payment_intent: paymentId, reason: "requested_by_customer" });
+      await stripe.refunds.create(
+        { payment_intent: request.paymentId, reason: "requested_by_customer" },
+        // A timeout-after-success at the provider must not double-refund on retry.
+        { idempotencyKey: `refund:${request.idempotencyKey}` },
+      );
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -379,7 +398,10 @@ function verifyStripeWebhookSync(payload: string, signature: string, secret: str
       "";
     if (!paymentId) return { ok: false, reason: "missing_payment_id" };
 
-    // Amount: metadata is authoritative for our quotes; Stripe's totals are fallback.
+    // Amount: the provider-charged total is authoritative for our quotes.
+    // Echoed metadata is only a fallback for event variants that omit the
+    // provider amount; trusting metadata first would hide a wrong-amount
+    // payment (e.g. tax/fees changing the charged total).
     const metaCents = obj.metadata?.amount_cents ? Number(obj.metadata.amount_cents) : null;
     const stripeAmount =
       typeof obj.amount_total === "number"
@@ -387,7 +409,12 @@ function verifyStripeWebhookSync(payload: string, signature: string, secret: str
         : typeof obj.amount === "number"
           ? obj.amount
           : null;
-    const amountCents = Number.isFinite(metaCents) && (metaCents as number) > 0 ? (metaCents as number) : stripeAmount;
+    const amountCents =
+      typeof stripeAmount === "number" && Number.isFinite(stripeAmount)
+        ? stripeAmount
+        : Number.isFinite(metaCents) && (metaCents as number) > 0
+          ? (metaCents as number)
+          : null;
 
     // Stripe reports currency lowercase ("usd"); normalize before comparing.
     const currency = normalizeCurrency(obj.currency);
@@ -464,14 +491,18 @@ export class DodoPaymentsProvider implements PaymentProvider {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
+    idempotencyKey: string;
   }): Promise<CheckoutResult> {
     // Dodo uses a single return_url for success/failure/cancel and appends
     // ?payment_id=&status= — the webhook (never the redirect) finalizes.
+    // Idempotency-Key keeps a timed-out create from minting a second payable
+    // session on client retry (Dodo honors the standard header).
     const res = await fetch(`${this.baseUrl}/checkouts`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
+        "Idempotency-Key": `checkout:${args.idempotencyKey}`,
       },
       body: JSON.stringify({
         product_cart: [{ product_id: this.productId, quantity: 1, amount: args.amountCents }],
@@ -508,15 +539,18 @@ export class DodoPaymentsProvider implements PaymentProvider {
     return verifyDodoWebhookSync(payload, signature, headers?.webhookId ?? null, headers?.webhookTimestamp ?? null, secret);
   }
 
-  async refundPayment(paymentId: string, reason: string): Promise<RefundResult> {
+  async refundPayment(request: RefundRequest): Promise<RefundResult> {
     try {
       const res = await fetch(`${this.baseUrl}/refunds`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
+          // A timeout-after-success at the provider must not double-refund on
+          // retry: the same ledger claim replays the same key.
+          "Idempotency-Key": `refund:${request.idempotencyKey}`,
         },
-        body: JSON.stringify({ payment_id: paymentId, reason: reason.slice(0, 500) }),
+        body: JSON.stringify({ payment_id: request.paymentId, reason: request.reason.slice(0, 500) }),
       });
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
@@ -537,6 +571,20 @@ export class DodoPaymentsProvider implements PaymentProvider {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   }
+}
+
+/**
+ * Parse a Dodo dispute amount for the reconciliation record only. Dodo sends
+ * these as decimal strings (unlike payment minor units), so accept numeric
+ * strings and round half-up to the nearest minor unit. Never funds anything.
+ */
+function parseDisputeAmountCents(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value.trim());
+    if (Number.isFinite(n)) return Math.round(n);
+  }
+  return null;
 }
 
 function dodoWebhookKeyBytes(secret: string): Buffer {
@@ -630,7 +678,13 @@ function verifyDodoWebhookSync(
     // payment.failed may arrive without a payment object in edge cases;
     // failed/other events are observability-only, so allow empty payment id.
     // Succeeded events must carry one — otherwise finalization is impossible.
-    if (!paymentId && (status === "succeeded" || isRefund)) return { ok: false, reason: "missing_payment_id" };
+    // Disputes must too: provider_payment_id is the ONLY key joining a dispute
+    // back to its sale and payment_events row, and "" satisfies the not-null
+    // constraint while being unjoinable — a chargeback recorded in a way that
+    // cannot be traced to what it reverses is barely better than none.
+    if (!paymentId && (status === "succeeded" || status === "disputed" || isRefund)) {
+      return { ok: false, reason: "missing_payment_id" };
+    }
 
     const meta = (data.metadata ?? {}) as Record<string, unknown>;
     const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
@@ -665,7 +719,7 @@ function verifyDodoWebhookSync(
               // Dodo sends dispute amounts as decimal strings, unlike payment
               // minor units, so parse permissively for the record only. This
               // value never funds or reverses anything.
-              amountCents: typeof data.amount === "number" ? data.amount : null,
+              amountCents: parseDisputeAmountCents(data.amount),
               currency,
             }
           : null,
