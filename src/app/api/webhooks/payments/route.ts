@@ -152,6 +152,17 @@ export async function POST(req: Request) {
         payment_id: event.paymentId,
         detail: recorded.error,
       });
+      // The event row MUST be moved off "received" before returning 500.
+      // The duplicate handler above answers any "received" row with a
+      // terminal 200 (`duplicate: true, inProgress: true`), so without this
+      // the very redelivery this 500 asks for is acknowledged and dropped —
+      // and only at info level. Marking "error" is what makes a retry
+      // re-enter processing; every other 500 path here already does it.
+      try {
+        await markPaymentEventStatus(provider.name, event.id, "error", "dispute_store_failed");
+      } catch {
+        // Status write itself failed — still 500 so the provider retries.
+      }
       return Response.json({ error: "dispute_store_failed", retryable: true }, { status: 500 });
     }
     try {
@@ -186,6 +197,15 @@ export async function POST(req: Request) {
         event_type: event.type,
         detail: e instanceof Error ? e.message : String(e),
       });
+      // Same reason as the dispute branch: a "received" row is answered with a
+      // terminal 200 by the duplicate handler, so a 500 that leaves the row in
+      // "received" silently discards its own retry. Only an "error" row
+      // re-enters processing.
+      try {
+        await markPaymentEventStatus(provider.name, event.id, "error", "refund_event_reconcile_failed");
+      } catch {
+        // Status write itself failed — still 500 so the provider retries.
+      }
       return Response.json({ error: "refund_event_reconcile_failed", retryable: true }, { status: 500 });
     }
     logEvent(event.type === "refund.succeeded" ? "refund_provider_succeeded" : "refund_provider_failed", event.type === "refund.succeeded" ? "info" : "error", {
