@@ -1,6 +1,6 @@
 ---
 name: money-path-review
-description: Review payment, webhook, checkout, refund, quote and takeover code for the specific defect classes that silently lose or double-spend money. Use this skill whenever you are writing, reviewing, or debugging anything that touches a payment provider (Dodo, Stripe), a webhook handler, an idempotency or retry path, a refund or chargeback flow, a rate limiter that guards checkout, or the finalize_takeover RPC — and also when adding a database migration, a CI gate, or a test harness for any of those, since the worst money bugs in this repo reached production through weak tests rather than obviously wrong code. Use it even when the change looks small or purely mechanical: every defect catalogued here shipped as a one-line-looking change that passed a green test suite.
+description: Review AND prove correctness of payment, webhook, checkout, refund, quote and takeover code — the defect classes that silently lose or double-spend money, plus the verification techniques that actually demonstrate a fix rather than assuming it. Use this skill whenever you touch a payment provider (Dodo, Stripe), a webhook handler, an idempotency or retry path, a refund or chargeback flow, a rate limiter guarding checkout, or the finalize_takeover RPC; when adding a migration, CI gate, or test harness for any of those; and above all whenever you are about to write or trust a test for a money bug, reproduce a race condition, or claim a concurrency fix works. Spotting these bugs is the easy half — the bugs that reached production here did so past a green suite, because a regression test nobody watched fail and a parallel-request probe that cannot hit the window both look like proof and are not.
 ---
 
 # Money-path review
@@ -14,6 +14,16 @@ Use this as a review lens, not a checklist to tick. For each pattern below,
 find the concrete line in the code under review that could exhibit it, and say
 either "this is safe because X" or "this is the bug". A pattern you cannot map
 onto real lines is a pattern you have not actually checked.
+
+**Spend your effort on the proof, not the spotting.** Measured on seeded-bug
+fixtures, a careful reviewer finds these defects with or without this
+catalogue. What does not happen by default is the verification: mutation-testing
+the regression test, and forcing a concurrency interleaving instead of firing
+parallel requests. Both bugs that reached production in this repo did so past a
+green suite — one test had exactly the right property over a corpus that missed
+the case, and one race was declared safe by a parallel probe that could not hit
+the window. So treat §9 and `references/verification.md` as the load-bearing
+part of this skill; the catalogue below is context for what to look for.
 
 ## The one idea behind most of these
 
