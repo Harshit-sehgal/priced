@@ -17,12 +17,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const raw = await listMarket(500);
   const reservedFlags = await Promise.all(raw.map((r) => isDomainReserved(r.domain)));
   const rows = raw.filter((_, i) => !reservedFlags[i]);
+  // Static pages that explain the product and carry the disclaimers. These
+  // were previously missing, so the one page that says in full what a buyer is
+  // and is not getting was invisible to search — for a product whose defence
+  // is "we say it everywhere", the explainer has to be indexable.
+  const staticPages: MetadataRoute.Sitemap = [
+    { url: `${base}/about`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${base}/terms`, changeFrequency: "monthly", priority: 0.3 },
+    { url: `${base}/privacy`, changeFrequency: "monthly", priority: 0.3 },
+    { url: `${base}/refunds`, changeFrequency: "monthly", priority: 0.3 },
+  ];
+
   return [
     {
       url: base,
       changeFrequency: "hourly",
       priority: 1,
     },
+    ...staticPages,
     ...rows.map((row) => ({
       url: `${base}/domain/${row.domain}`,
       lastModified: row.updatedAt ? new Date(row.updatedAt) : undefined,
