@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   // limiters, which fail CLOSED — so an unauthenticated flood that exhausts
   // the command quota would 429 the money path. Even a rejected request costs
   // a command, so the cheap local gate has to come first.
-  if (!withinLocalTelemetryBudget("analytics")) {
+  if (!withinLocalTelemetryBudget("analytics", ip)) {
     return NextResponse.json({ ok: true, dropped: "rate_limited" }, { status: 429 });
   }
 

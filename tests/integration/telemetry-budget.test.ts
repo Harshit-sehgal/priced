@@ -16,6 +16,7 @@ import {
   resetTelemetryBudgetForTests,
   shouldCountView,
   TELEMETRY_LOCAL_LIMIT,
+  TELEMETRY_GLOBAL_LIMIT,
 } from "../../src/lib/view-events.ts";
 
 test.beforeEach(() => resetTelemetryBudgetForTests());
@@ -38,12 +39,15 @@ test("dimensions are independent so views cannot starve analytics", () => {
 // WITHOUT consulting the shared limiter — even for an IP and resource that
 // have never been seen, which would otherwise sail through dedup.
 test("an exhausted budget short-circuits before the shared limiter is touched", async () => {
-  for (let i = 0; i < TELEMETRY_LOCAL_LIMIT; i++) withinLocalTelemetryBudget("view");
+  // Exhaust the budget for THIS client — the tiers are per-client now, so a
+  // different IP's budget is deliberately unaffected (covered below).
+  const ip = "198.51.100.77";
+  for (let i = 0; i < TELEMETRY_LOCAL_LIMIT; i++) withinLocalTelemetryBudget("view", ip);
 
   const counted = await shouldCountView({
     event: "tag_viewed",
     resource: "domain:never-seen-before.com",
-    ip: "198.51.100.77",
+    ip,
     userAgent: "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36",
   });
   assert.equal(counted, false, "must shed locally rather than spend a Redis command");
@@ -71,6 +75,44 @@ test("bots are rejected before they can even consume local budget", async () => 
   }
   // All 50 were bots, so the budget is untouched and still fully available.
   let allowed = 0;
-  while (withinLocalTelemetryBudget("view")) allowed++;
+  while (withinLocalTelemetryBudget("view", "198.51.100.79")) allowed++;
   assert.equal(allowed, before, "bot traffic must not consume the budget");
+});
+
+// A purely global budget bounded our Redis spend but handed an attacker a
+// cheap way to blind analytics for everyone: one client could burn the whole
+// allowance and suppress every other visitor's telemetry until the window
+// rolled. The per-client tier exists to stop exactly that.
+test("one client exhausting its budget does not suppress other clients", () => {
+  const attacker = "203.0.113.99";
+  for (let i = 0; i < TELEMETRY_LOCAL_LIMIT; i++) {
+    assert.equal(withinLocalTelemetryBudget("analytics", attacker), true, `attacker ${i + 1}`);
+  }
+  assert.equal(withinLocalTelemetryBudget("analytics", attacker), false, "attacker is capped");
+  // A different visitor is entirely unaffected.
+  assert.equal(withinLocalTelemetryBudget("analytics", "198.51.100.4"), true);
+  assert.equal(withinLocalTelemetryBudget("analytics", "198.51.100.5"), true);
+});
+
+// The per-client cap alone multiplies by the number of distinct clients, so it
+// stops bounding anything. The global tier keeps the instance-wide ceiling
+// that protects the shared Redis quota.
+test("many distinct clients still hit the instance-wide ceiling", () => {
+  let allowed = 0;
+  for (let i = 0; i < TELEMETRY_GLOBAL_LIMIT + 50; i++) {
+    if (withinLocalTelemetryBudget("view", `10.0.${Math.floor(i / 250)}.${i % 250}`)) allowed++;
+  }
+  assert.equal(allowed, TELEMETRY_GLOBAL_LIMIT, "the global tier must still bind");
+});
+
+test("an over-budget client does not consume the global allowance", () => {
+  const noisy = "203.0.113.50";
+  for (let i = 0; i < TELEMETRY_LOCAL_LIMIT + 500; i++) withinLocalTelemetryBudget("view", noisy);
+  // The noisy client spent at most its own cap globally, so the remaining
+  // global room is GLOBAL - LOCAL, not GLOBAL - (LOCAL + 500).
+  let others = 0;
+  for (let i = 0; i < TELEMETRY_GLOBAL_LIMIT; i++) {
+    if (withinLocalTelemetryBudget("view", `10.1.${Math.floor(i / 250)}.${i % 250}`)) others++;
+  }
+  assert.equal(others, TELEMETRY_GLOBAL_LIMIT - TELEMETRY_LOCAL_LIMIT);
 });

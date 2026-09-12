@@ -323,6 +323,21 @@ class StripeProvider implements PaymentProvider {
 }
 
 function verifyStripeWebhookSync(payload: string, signature: string, secret: string): WebhookVerification {
+  return verifyStripeWebhookInternal(payload, signature, secret, true);
+}
+
+/**
+ * Shared Stripe verifier. enforceFreshness=false is ONLY for the
+ * stale-but-signed path: the caller already proved the HMAC over the
+ * timestamped content, and only the age gate is being waived so a delayed
+ * but paid delivery flows through the money pipeline instead of a 400 drop.
+ */
+function verifyStripeWebhookInternal(
+  payload: string,
+  signature: string,
+  secret: string,
+  enforceFreshness: boolean,
+): WebhookVerification {
   // Stripe sends "t=<unix>,v1=<hex>"; verify HMAC of "t.payload".
   // Parsed defensively: a malformed header must produce a rejection, never a
   // throw, because a throw here would surface as a 500 and ask the provider to
@@ -339,7 +354,8 @@ function verifyStripeWebhookSync(payload: string, signature: string, secret: str
   }
   if (!timestamp || !v1) return { ok: false, reason: "malformed_signature" };
   const age = Math.abs(Date.now() / 1000 - Number(timestamp));
-  if (!Number.isFinite(age) || age > 60 * 10) return { ok: false, reason: "stale_timestamp" };
+  if (!Number.isFinite(age)) return { ok: false, reason: "malformed_signature" };
+  if (enforceFreshness && age > 60 * 10) return { ok: false, reason: "stale_timestamp" };
   const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
   if (!timingSafeEqualStrings(v1, expected)) return { ok: false, reason: "invalid_signature" };
 
@@ -497,6 +513,9 @@ export class DodoPaymentsProvider implements PaymentProvider {
     // ?payment_id=&status= — the webhook (never the redirect) finalizes.
     // Idempotency-Key keeps a timed-out create from minting a second payable
     // session on client retry (Dodo honors the standard header).
+    // Timeout is load-bearing: without it a hung socket holds the checkout
+    // route until the platform kills it, and the caller cannot distinguish
+    // "never created" from "created but unacknowledged".
     const res = await fetch(`${this.baseUrl}/checkouts`, {
       method: "POST",
       headers: {
@@ -504,6 +523,7 @@ export class DodoPaymentsProvider implements PaymentProvider {
         Authorization: `Bearer ${this.apiKey}`,
         "Idempotency-Key": `checkout:${args.idempotencyKey}`,
       },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         product_cart: [{ product_id: this.productId, quantity: 1, amount: args.amountCents }],
         // Dodo may have no region-specific methods available in a test
@@ -541,6 +561,9 @@ export class DodoPaymentsProvider implements PaymentProvider {
 
   async refundPayment(request: RefundRequest): Promise<RefundResult> {
     try {
+      // Timeout is load-bearing here too: an abort is INDTERMINATE (the
+      // provider may have executed), so the caller must keep the ledger
+      // lease / manual-review path, never treat it as a clean "not done".
       const res = await fetch(`${this.baseUrl}/refunds`, {
         method: "POST",
         headers: {
@@ -550,6 +573,7 @@ export class DodoPaymentsProvider implements PaymentProvider {
           // retry: the same ledger claim replays the same key.
           "Idempotency-Key": `refund:${request.idempotencyKey}`,
         },
+        signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ payment_id: request.paymentId, reason: request.reason.slice(0, 500) }),
       });
       if (!res.ok) {
@@ -609,13 +633,30 @@ function verifyDodoWebhookSync(
   webhookTimestamp: string | null,
   secret: string,
 ): WebhookVerification {
+  return verifyDodoWebhookInternal(payload, signature, webhookId, webhookTimestamp, secret, true);
+}
+
+/**
+ * Shared Dodo verifier. enforceFreshness=false is ONLY for the
+ * stale-but-signed path: the caller already proved the HMAC over the
+ * timestamped content, and only the age gate is being waived so a delayed
+ * but paid delivery flows through the money pipeline instead of a 400 drop.
+ */
+function verifyDodoWebhookInternal(
+  payload: string,
+  signature: string | null,
+  webhookId: string | null,
+  webhookTimestamp: string | null,
+  secret: string,
+  enforceFreshness: boolean,
+): WebhookVerification {
   if (!signature) return { ok: false, reason: "missing_signature" };
   if (!webhookId) return { ok: false, reason: "missing_webhook_id" };
   if (!webhookTimestamp) return { ok: false, reason: "missing_webhook_timestamp" };
   const ts = Number(webhookTimestamp);
   if (!Number.isFinite(ts)) return { ok: false, reason: "malformed_timestamp" };
   const ageSec = Math.abs(Date.now() / 1000 - ts);
-  if (ageSec > 60 * 10) return { ok: false, reason: "stale_timestamp" };
+  if (enforceFreshness && ageSec > 60 * 10) return { ok: false, reason: "stale_timestamp" };
 
   // Standard Webhooks: one or more space/comma-separated "v1,<base64>" entries.
   const candidates = signature
@@ -865,8 +906,84 @@ export function getPaymentProvider(): PaymentProvider {
   return new DemoProvider();
 }
 
+/**
+ * Resolve the provider implementation that owns a given payment event.
+ * Refund execution MUST use this, never getPaymentProvider(): a provider
+ * switch (Dodo<->Stripe, test<->live key rotation) between payment and
+ * refund would otherwise send a payment id to the wrong provider, where it
+ * fails, burns a ledger attempt, and parks the payment in manual_review
+ * even though the owning provider would have refunded it.
+ */
+export function getProviderForEvent(providerName: string): PaymentProvider {
+  if (providerName === "dodo") {
+    if (!process.env.DODO_PAYMENTS_API_KEY) throw new ProviderNotConfiguredError("dodo");
+    return new DodoPaymentsProvider();
+  }
+  if (providerName === "stripe") {
+    if (!process.env.STRIPE_SECRET_KEY) throw new ProviderNotConfiguredError("stripe");
+    return new StripeProvider();
+  }
+  if (providerName === "demo") return new DemoProvider();
+  throw new Error(`UNKNOWN_PAYMENT_PROVIDER: ${providerName}`);
+}
+
 export function getConfiguredProviderName(): "dodo" | "stripe" | "demo" {
   if (process.env.DODO_PAYMENTS_API_KEY) return "dodo";
   if (process.env.STRIPE_SECRET_KEY) return "stripe";
   return "demo";
+}
+
+/**
+ * Re-verify a stale-but-signed delivery with the age gate waived.
+ * The caller MUST have already proven the HMAC: this replays the SAME
+ * signature verification with enforceFreshness=false, so a forged payload
+ * still fails invalid_signature here. Only the provider that owns the
+ * delivery is consulted (signature scheme + secret differ per provider).
+ */
+export function parseStaleWebhookEvent(
+  providerName: string,
+  payload: string,
+  signature: string | null,
+  headers: WebhookVerifyHeaders,
+): WebhookVerification {
+  if (providerName === "dodo") {
+    const secret = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+    if (!secret) return { ok: false, reason: "webhook_secret_missing" };
+    const first = verifyDodoWebhookInternal(
+      payload,
+      signature,
+      headers?.webhookId ?? null,
+      headers?.webhookTimestamp ?? null,
+      secret,
+      true,
+    );
+    // CAREFUL: `stale_timestamp` does NOT mean the HMAC matched. The freshness
+    // check runs BEFORE the digest is computed, so this first pass returns
+    // "stale" having proved nothing about the signature. It is only a cheap
+    // pre-filter that tells us which reason to waive.
+    //
+    // The signature is proved by the SECOND call below, which recomputes the
+    // full HMAC with freshness disabled. That re-verification is the entire
+    // security of this path — never "optimise" it away by trusting
+    // `first.reason`, and never return `ok` derived from this first pass.
+    // Any other reason (including invalid_signature) is returned unchanged.
+    if (first.ok || first.reason !== "stale_timestamp") return first;
+    return verifyDodoWebhookInternal(
+      payload,
+      signature,
+      headers?.webhookId ?? null,
+      headers?.webhookTimestamp ?? null,
+      secret,
+      false,
+    );
+  }
+  if (providerName === "stripe") {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return { ok: false, reason: "webhook_secret_missing" };
+    if (!signature) return { ok: false, reason: "missing_signature" };
+    const first = verifyStripeWebhookInternal(payload, signature, secret, true);
+    if (first.ok || first.reason !== "stale_timestamp") return first;
+    return verifyStripeWebhookInternal(payload, signature, secret, false);
+  }
+  return { ok: false, reason: "stale_timestamp_unsupported_provider" };
 }

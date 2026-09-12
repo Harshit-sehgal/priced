@@ -46,11 +46,23 @@ export const VIEW_IP_WINDOW_MS = 60_000;
  * path 429s. Telemetry must never be able to take down checkout.
  *
  * This gate runs BEFORE the first Redis call, so a flood is shed at ~zero cost
- * and spends no quota. It is deliberately generous — it is a blast-radius cap,
- * not the real limiter. Being per-instance and memory-only it resets on cold
+ * and spends no quota. Being per-instance and memory-only it resets on cold
  * start, which is fine: its only job is to bound what one instance can spend.
+ *
+ * TWO tiers, because one is not enough:
+ *  - PER-CLIENT caps what a single caller may consume. A purely global budget
+ *    let one client burn the whole allowance and suppress telemetry for every
+ *    other visitor on the instance until the window rolled — it bounded our
+ *    Redis spend but handed an attacker a cheap way to blind our analytics.
+ *  - GLOBAL still bounds the instance in aggregate, because a per-client cap
+ *    alone multiplies by the number of distinct clients and stops bounding
+ *    anything.
+ * Both are deliberately generous: this is a blast-radius cap, not the real
+ * limiter, and it fails closed because dropping a view always beats risking
+ * the money path.
  */
 export const TELEMETRY_LOCAL_LIMIT = 300;
+export const TELEMETRY_GLOBAL_LIMIT = 3_000;
 export const TELEMETRY_LOCAL_WINDOW_MS = 60_000;
 
 type LocalBucket = { count: number; resetAt: number };
@@ -65,24 +77,30 @@ export function resetTelemetryBudgetForTests(): void {
   g.__iptTelemetryLocal?.clear();
 }
 
+/** Consume one unit from a named bucket; false once it is exhausted. */
+function take(buckets: Map<string, LocalBucket>, key: string, limit: number, now: number): boolean {
+  const bucket = buckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    buckets.set(key, { count: 1, resetAt: now + TELEMETRY_LOCAL_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= limit) return false;
+  bucket.count += 1;
+  return true;
+}
+
 /**
- * True when this instance may still spend a Redis command on telemetry.
- * Fails CLOSED (returns false) once the local budget is exhausted — dropping a
- * view is always preferable to risking the money path.
+ * True when this instance may still spend a Redis command on telemetry for
+ * this caller. Fails CLOSED once either tier is exhausted.
  */
-export function withinLocalTelemetryBudget(dimension: string): boolean {
+export function withinLocalTelemetryBudget(dimension: string, ip = "unknown"): boolean {
   const now = Date.now();
   const buckets = localBuckets();
   // Bound the map itself: an unbounded key space would be its own memory leak.
   if (buckets.size > 5_000) buckets.clear();
-  const bucket = buckets.get(dimension);
-  if (!bucket || bucket.resetAt <= now) {
-    buckets.set(dimension, { count: 1, resetAt: now + TELEMETRY_LOCAL_WINDOW_MS });
-    return true;
-  }
-  if (bucket.count >= TELEMETRY_LOCAL_LIMIT) return false;
-  bucket.count += 1;
-  return true;
+  // Per-client first: an over-budget client must not consume global allowance.
+  if (!take(buckets, `${dimension}:${ip}`, TELEMETRY_LOCAL_LIMIT, now)) return false;
+  return take(buckets, `${dimension}:__all__`, TELEMETRY_GLOBAL_LIMIT, now);
 }
 
 // `/api/analytics` limits. Analytics is high-volume by nature, so these are
@@ -128,7 +146,8 @@ export async function shouldCountView(args: {
   if (isBotUserAgent(args.userAgent)) return false;
   // Spend no Redis command at all once this instance's telemetry budget is
   // gone; the shared limiter is what checkout depends on. See the constant.
-  if (!withinLocalTelemetryBudget("view")) return false;
+  const ipKey = args.ip?.trim() || "unknown";
+  if (!withinLocalTelemetryBudget("view", ipKey)) return false;
   const ip = args.ip?.trim() || "unknown";
   const resource = args.resource.slice(0, 253).toLowerCase();
   // Dedup first: a repeat view short-circuits before the per-IP budget, so the
