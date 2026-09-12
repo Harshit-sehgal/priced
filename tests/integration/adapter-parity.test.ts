@@ -160,3 +160,53 @@ test("unheld domains never count toward market value", async () => {
   assert.equal(await memory.marketValueCents(), 500);
   resetMemoryMarket();
 });
+
+// The blocklist exists to keep impersonation-dangerous tags out of the game,
+// and the Terms say a domain may be reserved AFTER it is already held. Before
+// this, only the sitemap and "Most Fought Over" honoured it, so reserving a
+// dangerous tag left it promoted on the homepage table, in Newly Claimed and
+// in the activity feed. A control that only half the surfaces respect is not
+// a control.
+test("reserved tags are dropped from every discovery surface", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  const { DEFAULT_RESERVED_DOMAINS } = await import("../../src/lib/domains.ts");
+  resetMemoryMarket();
+
+  const reserved = DEFAULT_RESERVED_DOMAINS[0]!; // statically blocklisted
+  memory.seedDemoMarket([
+    { domain: reserved, holderHandle: "impostor", priceCents: 900 },
+    { domain: "allowed-tag.com", holderHandle: "ok", priceCents: 500 },
+  ]);
+
+  const market = await memory.listMarket(50);
+  assert.ok(
+    !market.some((d) => d.domain === reserved),
+    `${reserved} must not appear in the market table`,
+  );
+  assert.ok(market.some((d) => d.domain === "allowed-tag.com"), "ordinary tags still listed");
+
+  const recent = await memory.listRecentSales(50);
+  assert.ok(!recent.some((s) => s.domain === reserved), "reserved tag must not appear in activity");
+
+  const claimed = await memory.listNewlyClaimed(50);
+  assert.ok(!claimed.some((r) => r.domain === reserved), "reserved tag must not appear in newly claimed");
+
+  resetMemoryMarket();
+});
+
+test("filtering reserved rows does not under-fill a list", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+  // Over-fetch must still return a full page of allowed rows.
+  memory.seedDemoMarket(
+    Array.from({ length: 30 }, (_, i) => ({
+      domain: `fill-${i}.com`,
+      holderHandle: `h${i}`,
+      priceCents: 500 + i,
+    })),
+  );
+  assert.equal((await memory.listMarket(25)).length, 25, "a full page is still returned");
+  resetMemoryMarket();
+});

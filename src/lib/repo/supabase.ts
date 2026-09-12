@@ -23,10 +23,12 @@ import {
   QUOTE_TTL_MS,
   REFUND_CLAIM_LEASE_MS,
   bestRisePerDomain,
+  dropReservedRows,
   filterOutReserved,
   isIdShaped,
   joinContested,
   joinRising,
+  overFetch,
   rankContested,
   rankRising,
   tallyContestedSales,
@@ -118,9 +120,9 @@ export async function listMarket(limit = DEFAULT_MARKET_LIMIT): Promise<RepoDoma
     .not("holder_user_id", "is", null)
     .order("price_cents", { ascending: false })
     .order("claimed_at", { ascending: true })
-    .limit(limit);
+    .limit(overFetch(limit));
   if (error) throw error;
-  return (data ?? []).map(toDomain);
+  return dropReservedRows((data ?? []).map(toDomain), (d) => d.domain, await reservedDisplaySet(), limit);
 }
 
 /** Sales where the given handle is the buyer, newest first. */
@@ -159,6 +161,43 @@ export async function listMostContested(limit = DEFAULT_CONTESTED_LIMIT): Promis
   // Batched fetch of live market state — one query instead of one per domain.
   const rows = await listDomainsByNames(live);
   return joinContested(live, counts, rows);
+}
+
+/**
+ * The whole blocklist, cached briefly, for DISPLAY filtering only.
+ *
+ * The homepage alone calls five discovery functions; giving each its own
+ * reserved lookup would add five queries per render to a free-tier database.
+ * reserved_domains is a small operator-managed blocklist, so fetching it once
+ * and reusing it for a few seconds is far cheaper and just as correct for
+ * listings.
+ *
+ * The money gate is deliberately NOT cached: assertNotReserved() re-reads the
+ * table on every quote, so a newly reserved domain becomes unquotable
+ * immediately. The worst this cache can do is leave a tag visible in a list
+ * for a few more seconds — it can never let one be bought.
+ */
+const RESERVED_CACHE_MS = 30_000;
+let reservedCache: { at: number; set: Set<string> } | null = null;
+
+async function reservedDisplaySet(): Promise<Set<string>> {
+  const now = Date.now();
+  if (reservedCache && now - reservedCache.at < RESERVED_CACHE_MS) return reservedCache.set;
+  try {
+    const { data, error } = await client().from("reserved_domains").select("domain");
+    if (error) {
+      // Display-only: keep the market rendering. See assertNotReserved for the
+      // path that must fail closed.
+      logEvent("reserved_lookup_failed", "warn", { scope: "display", detail: error.message });
+      return reservedCache?.set ?? new Set<string>();
+    }
+    const set = new Set((data ?? []).map((row) => String(row.domain)));
+    reservedCache = { at: now, set };
+    return set;
+  } catch (e) {
+    logEvent("reserved_lookup_failed", "warn", { scope: "display", detail: e instanceof Error ? e.message : String(e) });
+    return reservedCache?.set ?? new Set<string>();
+  }
 }
 
 /** Batched reserved-domain lookup (one query for a domain set). */
@@ -234,14 +273,15 @@ export async function listNewlyClaimed(limit = DEFAULT_NEWLY_CLAIMED_LIMIT): Pro
     .select("domain, price_cents, buyer_handle, created_at")
     .eq("previous_price_cents", 0)
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(overFetch(limit));
   if (error) throw error;
-  return (data ?? []).map((row) => ({
+  const claimed = (data ?? []).map((row) => ({
     domain: String(row.domain),
     priceCents: Number(row.price_cents),
     holderHandle: String(row.buyer_handle),
     createdAt: String(row.created_at),
   }));
+  return dropReservedRows(claimed, (r) => r.domain, await reservedDisplaySet(), limit);
 }
 
 export async function listRecentSales(limit = DEFAULT_RECENT_SALES_LIMIT): Promise<RepoSale[]> {
@@ -249,9 +289,9 @@ export async function listRecentSales(limit = DEFAULT_RECENT_SALES_LIMIT): Promi
     .from("sales")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(overFetch(limit));
   if (error) throw error;
-  return (data ?? []).map(toSale);
+  return dropReservedRows((data ?? []).map(toSale), (s) => s.domain, await reservedDisplaySet(), limit);
 }
 
 export async function listSalesForDomain(domain: string, limit = DEFAULT_SALES_LIMIT): Promise<RepoSale[]> {

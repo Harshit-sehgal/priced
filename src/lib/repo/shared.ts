@@ -68,6 +68,40 @@ export function rankContested(counts: ContestedCounts, limit: number): string[] 
  * history. Static blocklist is synchronous; the DB list is one batched read
  * the caller has already performed (empty for the in-memory adapter).
  */
+/** Bounded over-fetch so reserved rows can be dropped without under-filling a list. */
+export function overFetch(limit: number): number {
+  return Math.min(limit * 2 + 20, 1000);
+}
+
+/**
+ * Drop rows whose domain is reserved, then trim to the requested limit.
+ *
+ * WHY every discovery surface needs this: the blocklist exists to keep
+ * impersonation-dangerous tags out of the game, and the Terms say a domain may
+ * be reserved AFTER it is already held. Before this, only the sitemap and
+ * "Most Fought Over" honoured it — so reserving a dangerous tag left it still
+ * promoted on the homepage table, in Fastest Rising, in Newly Claimed and in
+ * the activity feed. A moderation control that only half the surfaces respect
+ * is not a moderation control.
+ */
+export async function dropReservedRows<T>(
+  rows: T[],
+  domainOf: (row: T) => string,
+  dbReserved: Set<string>,
+  limit: number,
+): Promise<T[]> {
+  const { evaluateDomain } = await import("../domains.ts");
+  const kept: T[] = [];
+  for (const row of rows) {
+    const domain = domainOf(row);
+    if (dbReserved.has(domain)) continue;
+    if (evaluateDomain(domain).reason === "reserved") continue;
+    kept.push(row);
+    if (kept.length >= limit) break;
+  }
+  return kept;
+}
+
 export async function filterOutReserved(domains: string[], dbReserved: Set<string>): Promise<string[]> {
   const { evaluateDomain } = await import("../domains.ts");
   return domains.filter(

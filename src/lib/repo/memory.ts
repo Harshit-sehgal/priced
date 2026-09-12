@@ -22,10 +22,12 @@ import {
   QUOTE_TTL_MS,
   REFUND_CLAIM_LEASE_MS,
   bestRisePerDomain,
+  dropReservedRows,
   filterOutReserved,
   isIdShaped,
   joinContested,
   joinRising,
+  overFetch,
   rankContested,
   rankRising,
   tallyContestedSales,
@@ -92,10 +94,14 @@ export async function getDomain(domain: string): Promise<RepoDomain | null> {
 }
 
 export async function listMarket(limit = DEFAULT_MARKET_LIMIT): Promise<RepoDomain[]> {
-  return [...mem().domains.values()]
+  // Mirrors the Supabase path: reserved tags are dropped from listings too.
+  // There is no operator blocklist without a database, so only the static one
+  // applies here — dropReservedRows checks both.
+  const ranked = [...mem().domains.values()]
     .filter((d) => d.holderUserId)
     .sort((a, b) => b.priceCents - a.priceCents || a.claimedAt!.localeCompare(b.claimedAt!))
-    .slice(0, limit);
+    .slice(0, overFetch(limit));
+  return dropReservedRows(ranked, (d) => d.domain, new Set<string>(), limit);
 }
 
 /** Sales where the given handle is the buyer, newest first. */
@@ -168,13 +174,16 @@ export async function listNewlyClaimed(limit = DEFAULT_NEWLY_CLAIMED_LIMIT): Pro
   const rows = mem()
     .sales.filter((s) => s.previousPriceCents === 0)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, limit)
-    .map((s) => ({ domain: s.domain, priceCents: s.priceCents, buyerHandle: s.buyerHandle, createdAt: s.createdAt }));
-  return rows.map((r) => ({ domain: r.domain, priceCents: r.priceCents, holderHandle: r.buyerHandle, createdAt: r.createdAt }));
+    .slice(0, overFetch(limit))
+    .map((s) => ({ domain: s.domain, priceCents: s.priceCents, holderHandle: s.buyerHandle, createdAt: s.createdAt }));
+  return dropReservedRows(rows, (r) => r.domain, new Set<string>(), limit);
 }
 
 export async function listRecentSales(limit = DEFAULT_RECENT_SALES_LIMIT): Promise<RepoSale[]> {
-  return [...mem().sales].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, limit);
+  const recent = [...mem().sales]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, overFetch(limit));
+  return dropReservedRows(recent, (s) => s.domain, new Set<string>(), limit);
 }
 
 export async function listSalesForDomain(domain: string, limit = DEFAULT_SALES_LIMIT): Promise<RepoSale[]> {
