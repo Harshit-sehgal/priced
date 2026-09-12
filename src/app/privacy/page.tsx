@@ -87,9 +87,15 @@ export default function PrivacyPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>Where your data sits</h2>
       <p>
-        In managed hosting and database services, currently in India and the United States, together
-        with our payment provider. During the beta the contact for any privacy request is the
-        repository issue tracker; a real address is published before real-money launch.{" "}
+        The site itself runs on a global edge network, so the server that answers you is wherever
+        you happen to be. Stored data is narrower: the database is hosted in{" "}
+        <strong>India</strong>, the rate-limit counters in the <strong>United States</strong>, and
+        payment records with our payment provider. If you are in the EU or UK, that means your data
+        is processed outside it.
+      </p>
+      <p className="small muted" style={{ margin: 0 }}>
+        During the beta the contact for any privacy request is the repository issue tracker; a real
+        address is published before real-money launch.{" "}
         <strong>Never post payment details in a public issue.</strong>
       </p>
 

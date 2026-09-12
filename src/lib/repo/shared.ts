@@ -20,6 +20,19 @@ export const DEFAULT_RISING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const DEFAULT_NEWLY_CLAIMED_LIMIT = 5;
 export const DEFAULT_RECENT_SALES_LIMIT = 20;
 
+// Sampling caps for the two aggregate/display figures. These live here, not in
+// an adapter, because they ARE the behaviour: the Supabase path capped its
+// scans while the in-memory path scanned everything, so the two adapters
+// silently disagreed once the market grew past the cap — and the whole test
+// suite runs the uncapped one. A cap defined in one adapter is drift waiting
+// to happen; shared, both paths answer identically.
+//
+// Both figures are deliberately approximate headline numbers (the homepage
+// footnotes the market value "* according to this ridiculous website"). They
+// are never used for pricing or any money decision.
+export const MARKET_VALUE_SAMPLE_LIMIT = 1000;
+export const CONTESTED_SALES_SAMPLE_LIMIT = 2000;
+
 /** Id-shaped lookup guard: a malformed id is "not found", never a datastore error. */
 export function isIdShaped(value: string): boolean {
   return /^[0-9a-f-]{36}$/i.test(value);

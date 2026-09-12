@@ -76,3 +76,37 @@ test("cta: rejects dangerous and exotic protocols (§22 regression)", () => {
   if (normalized.ok) assert.equal(normalized.url, "https://example.com/");
   assert.ok(validateCta("Go", "https://example.com").ok);
 });
+
+// NEXT_PUBLIC_APP_URL is a build-time constant that goes stale the moment the
+// deployment moves — this app has already gone Vercel -> Cloudflare Workers.
+// During that window the self-host guard blocked a host nobody was served from
+// while the LIVE host was allowed, so a holder could point their CTA back into
+// Priced. A CTA on our own domain labelled "Verify ownership" borrows the
+// site's legitimacy to phish our own users, so the guard has to key on the
+// host the request actually arrived on, not only the configured one.
+test("cta: the host actually serving the request counts as self, even if config is stale", () => {
+  const previous = process.env.NEXT_PUBLIC_APP_URL;
+  process.env.NEXT_PUBLIC_APP_URL = "https://old-host.example"; // stale config
+  try {
+    const live = "priced.harshit10sehgal.workers.dev";
+    const stale = validateCta("Verify ownership", `https://${live}/login`);
+    assert.equal(stale.ok, true, "without the served host the live domain slips through");
+
+    const guarded = validateCta("Verify ownership", `https://${live}/login`, [live]);
+    assert.equal(guarded.ok, false, "the live host must be treated as self");
+    if (!guarded.ok) assert.equal(guarded.reason, "host_reserved");
+
+    // The configured host stays blocked too — both definitions of "us" apply.
+    const configured = validateCta("Home", "https://old-host.example/x", [live]);
+    assert.equal(configured.ok, false);
+
+    // Case and port handling must not be a bypass.
+    assert.equal(validateCta("x", `https://${live.toUpperCase()}/a`, [live]).ok, false);
+
+    // A genuinely external link is still fine.
+    assert.equal(validateCta("My site", "https://example.com/me", [live]).ok, true);
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+    else process.env.NEXT_PUBLIC_APP_URL = previous;
+  }
+});

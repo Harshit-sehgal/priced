@@ -52,7 +52,10 @@ export async function POST(req: Request) {
     if (body.ctaLabel == null && body.ctaUrl != null) {
       return NextResponse.json({ code: "CTA_LABEL_REQUIRED", error: "cta_label_required" }, { status: 422 });
     }
-    const v = validateCta(body.ctaLabel, body.ctaUrl);
+    // Pass the host this request actually arrived on: NEXT_PUBLIC_APP_URL is a
+    // build-time constant and goes stale whenever the deployment moves.
+    const servedHost = req.headers.get("host") ?? new URL(req.url).host;
+    const v = validateCta(body.ctaLabel, body.ctaUrl, [servedHost]);
     if (!v.ok) {
       const status = v.reason === "label_required" ? 422 : 422;
       return NextResponse.json({ code: `CTA_${v.reason.toUpperCase()}`, error: v.reason }, { status });

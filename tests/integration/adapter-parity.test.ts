@@ -121,3 +121,42 @@ test("demo seeding stores holder profiles under the same id key", async () => {
   // And a seeded handle is still exclusive against a real signup.
   await assert.rejects(() => upsertProfile("user-x", "seeded", null, null), CLAIM_HANDLE_TAKEN_MATCHER);
 });
+
+// The Supabase path capped its scans (1000 domains, 2000 sales) while the
+// in-memory path scanned everything. Since the whole node suite runs the
+// in-memory adapter, every test was exercising semantics production does not
+// have — and the two would report different headline numbers the moment the
+// market grew past a cap. The caps now live in shared.ts and both adapters
+// apply them; these tests fail if the memory path stops honouring them.
+test("marketValueCents honours the shared sampling cap", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const { MARKET_VALUE_SAMPLE_LIMIT } = await import("../../src/lib/repo/shared.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+
+  const over = MARKET_VALUE_SAMPLE_LIMIT + 25;
+  memory.seedDemoMarket(
+    Array.from({ length: over }, (_, i) => ({
+      domain: `cap-${i}.com`,
+      holderHandle: `h${i}`,
+      priceCents: 100,
+    })),
+  );
+
+  const value = await memory.marketValueCents();
+  assert.equal(
+    value,
+    MARKET_VALUE_SAMPLE_LIMIT * 100,
+    "must sum at most the cap, not every held domain",
+  );
+  resetMemoryMarket();
+});
+
+test("unheld domains never count toward market value", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+  memory.seedDemoMarket([{ domain: "held.com", holderHandle: "a", priceCents: 500 }]);
+  assert.equal(await memory.marketValueCents(), 500);
+  resetMemoryMarket();
+});

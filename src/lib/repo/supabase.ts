@@ -10,6 +10,7 @@ import { requireEligibleDomain } from "../domains.ts";
 import { logEvent } from "../logger.ts";
 import { isProdDatastore, supabaseServiceKey, supabaseUrl } from "./env.ts";
 import {
+  CONTESTED_SALES_SAMPLE_LIMIT,
   DEFAULT_CONTESTED_LIMIT,
   DEFAULT_MARKET_LIMIT,
   DEFAULT_NEWLY_CLAIMED_LIMIT,
@@ -17,6 +18,7 @@ import {
   DEFAULT_RISING_LIMIT,
   DEFAULT_RISING_WINDOW_MS,
   DEFAULT_SALES_LIMIT,
+  MARKET_VALUE_SAMPLE_LIMIT,
   MAX_REFUND_ATTEMPTS,
   QUOTE_TTL_MS,
   REFUND_CLAIM_LEASE_MS,
@@ -144,7 +146,7 @@ export async function listMostContested(limit = DEFAULT_CONTESTED_LIMIT): Promis
     .from("sales")
     .select("domain, created_at")
     .order("created_at", { ascending: false })
-    .limit(2000);
+    .limit(CONTESTED_SALES_SAMPLE_LIMIT);
   if (error) throw error;
   const counts = tallyContestedSales((data ?? []).map((row) => ({ domain: String(row.domain), createdAt: String(row.created_at) })));
 
@@ -285,7 +287,7 @@ export async function getProfileById(id: string): Promise<RepoProfile | null> {
 }
 
 export async function marketValueCents(): Promise<number> {
-  const rows = await listMarket(1000);
+  const rows = await listMarket(MARKET_VALUE_SAMPLE_LIMIT);
   return rows.reduce((sum, d) => sum + (d.holderUserId ? d.priceCents : 0), 0);
 }
 

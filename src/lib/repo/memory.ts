@@ -9,6 +9,7 @@ import "server-only";
 import { quoteFor } from "../game.ts";
 import { requireEligibleDomain } from "../domains.ts";
 import {
+  CONTESTED_SALES_SAMPLE_LIMIT,
   DEFAULT_CONTESTED_LIMIT,
   DEFAULT_MARKET_LIMIT,
   DEFAULT_NEWLY_CLAIMED_LIMIT,
@@ -16,6 +17,7 @@ import {
   DEFAULT_RISING_LIMIT,
   DEFAULT_RISING_WINDOW_MS,
   DEFAULT_SALES_LIMIT,
+  MARKET_VALUE_SAMPLE_LIMIT,
   MAX_REFUND_ATTEMPTS,
   QUOTE_TTL_MS,
   REFUND_CLAIM_LEASE_MS,
@@ -111,7 +113,11 @@ export async function listSalesForBuyer(buyerHandle: string, limit = DEFAULT_SAL
  * Returns live market state so the UI can show current holder/price.
  */
 export async function listMostContested(limit = DEFAULT_CONTESTED_LIMIT): Promise<Array<{ domain: string; sales: number; priceCents: number; holderHandle: string }>> {
-  const counts = tallyContestedSales(mem().sales);
+  // Mirror the Supabase path: tally the newest N sales, not every sale ever.
+  const recent = [...mem().sales]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, CONTESTED_SALES_SAMPLE_LIMIT);
+  const counts = tallyContestedSales(recent);
 
   const domains = rankContested(counts, limit);
   if (domains.length === 0) return [];
@@ -196,8 +202,13 @@ export async function getProfileById(id: string): Promise<RepoProfile | null> {
 }
 
 export async function marketValueCents(): Promise<number> {
-  const rows = [...mem().domains.values()];
-  return rows.reduce((sum, d) => sum + (d.holderUserId ? d.priceCents : 0), 0);
+  // Same sampling cap as the Supabase path, newest-claimed first, so both
+  // adapters report the same number for the same market.
+  const rows = [...mem().domains.values()]
+    .filter((d) => d.holderUserId)
+    .sort((a, b) => (b.claimedAt ?? "").localeCompare(a.claimedAt ?? ""))
+    .slice(0, MARKET_VALUE_SAMPLE_LIMIT);
+  return rows.reduce((sum, d) => sum + d.priceCents, 0);
 }
 
 // ------------------------------------------------------------------- quotes

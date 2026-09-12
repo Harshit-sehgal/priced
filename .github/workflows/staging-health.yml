@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      STAGING_URL: https://internet-price-tag.vercel.app
+      STAGING_URL: https://priced.harshit10sehgal.workers.dev
     steps:
       - name: Check liveness
         run: |
@@ -31,3 +31,24 @@ jobs:
           grep -q '"ok":true' /tmp/health-db.json
           grep -q '"datastore":"supabase"' /tmp/health-db.json
           grep -q '"db":"ok"' /tmp/health-db.json
+
+      - name: Check Redis readiness
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
+            "$STAGING_URL/api/health?check=redis" > /tmp/health-redis.json
+          grep -q '"ok":true' /tmp/health-redis.json
+          grep -q '"redis":"ok"' /tmp/health-redis.json
+
+      # Config drift: NEXT_PUBLIC_APP_URL builds the Dodo return URLs, the
+      # validateCta self-host blocklist, and every canonical URL. A stale value
+      # sends paid customers to a dead host and silently weakens the CTA rule.
+      # This deployment has already moved Vercel -> Cloudflare once, so the
+      # failure mode is real; nothing detected it before.
+      - name: Check serving origin matches NEXT_PUBLIC_APP_URL
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
+            "$STAGING_URL/api/health?check=origin" > /tmp/health-origin.json
+          grep -q '"origin":"ok"' /tmp/health-origin.json
+
