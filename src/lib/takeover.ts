@@ -13,6 +13,10 @@ import {
   type TakeoverOutcome,
 } from "./repo.ts";
 import { logEvent } from "./logger.ts";
+// Static: payments.ts imports repo/demo-secret only, never takeover, so there
+// is no cycle to break here. The heavy Stripe SDK is still lazy — payments.ts
+// dynamically imports it inside loadStripe().
+import { getPaymentProvider } from "./payments.ts";
 
 export type WebhookProcessingResult = {
   outcome: "processed" | "ignored" | "duplicate" | "failed";
@@ -88,17 +92,14 @@ export async function processSucceededPayment(args: {
   // same event) and is handled idempotently via finalizeTakeover + the
   // alreadyConsumed duplicate path below. Expiry for consumed quotes is also
   // ignored: the sale already happened, the TTL no longer matters.
+  // Every terminal status is handled identically — log, refund, report
+  // `quote_<status>`. This used to branch on expired/stale/cancelled first,
+  // but both arms were byte-for-byte identical, so the condition only chose
+  // between two indistinguishable paths. Enumerating the statuses here would
+  // also be a list that rots: a status added later would silently fall to the
+  // other arm. Handling them uniformly is both the existing behaviour and the
+  // one that cannot drift.
   if (quote.status !== "active" && quote.status !== "checkout_created" && quote.status !== "consumed") {
-    if (quote.status === "expired" || quote.status === "stale" || quote.status === "cancelled") {
-      logEvent("webhook_payment_terminal_quote", "warn", {
-        provider: args.provider,
-        payment_id: args.paymentId,
-        quote_id: quote.id,
-        quote_status: quote.status,
-      });
-      const reason = `quote_${quote.status}`;
-      return failedAfterRefund(reason, await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, reason));
-    }
     logEvent("webhook_payment_terminal_quote", "warn", {
       provider: args.provider,
       payment_id: args.paymentId,
@@ -303,7 +304,6 @@ async function refundPaymentWithLedger(
   }
 
   try {
-    const { getPaymentProvider } = await import("./payments.ts");
     const providerImpl = getPaymentProvider();
     const res = await providerImpl.refundPayment({
       paymentId,

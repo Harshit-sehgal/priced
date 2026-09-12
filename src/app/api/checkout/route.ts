@@ -3,7 +3,7 @@ import { getQuote, isProdDatastore, markQuoteStatus, setQuoteCheckout } from "@/
 import { getViewer, demoViewer } from "@/lib/auth";
 import { getConfiguredProviderName, getPaymentProvider } from "@/lib/payments";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimitAll } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
 import { logEvent } from "@/lib/logger";
 import { clientIp } from "@/lib/client-ip";
@@ -28,9 +28,14 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "login_required" }, { status: 401 });
 
   const ip = clientIp(req.headers);
-  const rlUser = await rateLimit(`checkout:${user.id}`, 20, 60_000);
-  const rlIp = await rateLimit(`checkout:ip:${ip}`, 30, 60_000);
-  if (!rlUser || !rlIp) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  // Both dimensions were already awaited unconditionally before either result
+  // was tested, so batching them is behaviour-identical — one round-trip, two
+  // counters, same verdict.
+  const allowed = await rateLimitAll([
+    { key: `checkout:${user.id}`, limit: 20, windowMs: 60_000 },
+    { key: `checkout:ip:${ip}`, limit: 30, windowMs: 60_000 },
+  ]);
+  if (!allowed) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
   // Body size guard before JSON parse (abuse/DoS).
   const rawBody = await req.text().catch(() => "");

@@ -74,3 +74,61 @@ async function redisCheck(key: string, limit: number, windowMs: number): Promise
 export async function rateLimit(key: string, limit: number, windowMs: number): Promise<boolean> {
   return redisCheck(key, limit, windowMs);
 }
+
+/** One dimension of a layered limit (per-user, per-IP, per-domain, …). */
+export type RateLimitDimension = { key: string; limit: number; windowMs: number };
+
+/**
+ * Check several independent dimensions in ONE Upstash round-trip.
+ *
+ * WHY: the money-path routes layer 2-4 dimensions, and awaiting them
+ * separately serialised a full HTTPS round-trip to us-west-1 each — on
+ * /api/quotes that was four before any real work began. It also burned four
+ * commands against a FREE-TIER database that the quote/checkout/handle
+ * limiters share, and `rateLimit` fails CLOSED: exhausting that quota 429s
+ * checkout. Fewer round-trips is a resilience win, not only a latency one.
+ *
+ * Behaviour is identical to the sequential code it replaces. That is only true
+ * because every call site already awaited ALL of its limiters before testing
+ * any result, so no short-circuit is being lost — each dimension's counter was
+ * always incremented. `every()` is deliberately NOT used to drive the checks
+ * for the same reason: it would stop incrementing at the first denial and
+ * quietly change which counters advance.
+ */
+export async function rateLimitAll(dimensions: RateLimitDimension[]): Promise<boolean> {
+  if (dimensions.length === 0) return true;
+  const cfg = redisConfig();
+  if (!cfg) {
+    // Evaluate every dimension, then combine — see the note above.
+    const results = dimensions.map((d) => memoryCheck(d.key, d.limit, d.windowMs));
+    return results.every(Boolean);
+  }
+  try {
+    const res = await fetch(`${cfg.url}/pipeline`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
+      // Upstash's /pipeline endpoint takes an array of complete commands and
+      // returns one {result} or {error} object per command, in order.
+      body: JSON.stringify(
+        dimensions.map((d) => ["EVAL", WINDOW_LUA, "1", `ipt:rl:${d.key}`, String(d.windowMs)]),
+      ),
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!res.ok) return false; // fail closed
+    const body = (await res.json()) as unknown;
+    // Anything we cannot fully account for is a denial: a short, malformed or
+    // partially-errored pipeline means we do not know the counts, and "unsure"
+    // must never resolve to "allowed" on a money path.
+    if (!Array.isArray(body) || body.length !== dimensions.length) return false;
+    for (let i = 0; i < dimensions.length; i++) {
+      const entry = body[i] as { result?: unknown; error?: unknown };
+      if (!entry || entry.error !== undefined) return false;
+      const count = typeof entry.result === "number" ? entry.result : Number(entry.result);
+      if (!Number.isFinite(count)) return false;
+      if (count > dimensions[i]!.limit) return false;
+    }
+    return true;
+  } catch {
+    return false; // Redis outage → reject, never unlimited
+  }
+}

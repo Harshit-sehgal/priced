@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createQuote } from "@/lib/repo";
 import { getViewer, demoViewer } from "@/lib/auth";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimitAll } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
 import { clientIp } from "@/lib/client-ip";
 
@@ -28,9 +28,13 @@ export async function POST(req: Request) {
 
   if (!user) return NextResponse.json({ error: "login_required" }, { status: 401 });
 
-  const rlUser = await rateLimit(`quote:${user.id}`, 30, 60_000);
-  const rlIp = await rateLimit(`quote:ip:${ip}`, 60, 60_000);
-  if (!rlUser || !rlIp) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  // Identity dimensions: both were already awaited unconditionally, so one
+  // round-trip here is behaviour-identical.
+  const allowedIdentity = await rateLimitAll([
+    { key: `quote:${user.id}`, limit: 30, windowMs: 60_000 },
+    { key: `quote:ip:${ip}`, limit: 60, windowMs: 60_000 },
+  ]);
+  if (!allowedIdentity) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
   let domain: string | undefined;
   try {
@@ -47,9 +51,14 @@ export async function POST(req: Request) {
   const { normalizeDomain } = await import("@/lib/game.ts");
   const normalizedDomain = normalizeDomain(domain);
   if (normalizedDomain) {
-    const rlDomain = await rateLimit(`quote:domain:${normalizedDomain}`, 30, 60_000);
-    const rlUserDomain = await rateLimit(`quote:user-domain:${user.id}:${normalizedDomain}`, 8, 60_000);
-    if (!rlDomain || !rlUserDomain) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+    // A second batch, not merged with the identity one above: these keys need
+    // the normalised domain, which is only known after the body is parsed.
+    // Four sequential round-trips become two.
+    const allowedDomain = await rateLimitAll([
+      { key: `quote:domain:${normalizedDomain}`, limit: 30, windowMs: 60_000 },
+      { key: `quote:user-domain:${user.id}:${normalizedDomain}`, limit: 8, windowMs: 60_000 },
+    ]);
+    if (!allowedDomain) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
   try {

@@ -26,6 +26,11 @@ export async function POST(req: Request) {
   if (!(await rateLimit(`handle:${user.id}`, 5, 60_000))) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
+  // Deliberately NOT batched with the per-user check above. That one returns
+  // early, so an already-denied user never increments the IP counter. Batching
+  // would advance both counters and make the IP limit quietly stricter — a
+  // behaviour change, and the short-circuit also saves a Redis command on the
+  // shared free-tier quota that the money-path limiters depend on.
   const ipForHandle = clientIp(req.headers);
   if (!(await rateLimit(`handle:ip:${ipForHandle}`, 15, 60_000))) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
