@@ -43,6 +43,18 @@ jobs:
           # Build must not require real credentials; app falls back to demo mode.
           NEXT_TELEMETRY_DISABLED: 1
 
+      # CI built the plain Next app but never the artifact that actually ships.
+      # Production runs on Cloudflare Workers via OpenNext, and that adaptation
+      # can fail on things `next build` is perfectly happy with: a Node API
+      # workerd does not implement, a middleware incompatibility, a bundling
+      # error. Without this, such a break passes CI green and is discovered at
+      # deploy time. Note OpenNext itself warns that Node.js middleware support
+      # on Cloudflare is experimental, and this app HAS middleware.
+      - name: Build the Cloudflare Worker (the real deploy artifact)
+        run: npm run cf:build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
       - name: Browser tests (§54)
         run: npm run test:browser
         env:
