@@ -256,7 +256,10 @@ export async function listFastestRising(limit = DEFAULT_RISING_LIMIT, windowMs =
     .filter((s) => s.roseCents > 0);
 
   const best = bestRisePerDomain(candidates);
-  const top = rankRising(best, limit);
+  // Rank wide, drop reserved, then trim — otherwise removing a blocklisted tag
+  // would silently shorten the list.
+  const ranked = rankRising(best, overFetch(limit));
+  const top = (await filterOutReserved(ranked, await reservedDisplaySet())).slice(0, limit);
   if (top.length === 0) return [];
 
   const rows = await listDomainsByNames(top);

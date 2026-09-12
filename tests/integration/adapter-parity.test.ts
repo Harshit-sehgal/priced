@@ -178,6 +178,18 @@ test("reserved tags are dropped from every discovery surface", async () => {
     { domain: reserved, holderHandle: "impostor", priceCents: 900 },
     { domain: "allowed-tag.com", holderHandle: "ok", priceCents: 500 },
   ]);
+  // A takeover (previous price > 0) so the tag also qualifies for Fastest
+  // Rising — otherwise that surface would pass vacuously.
+  const { finalizeTakeover, upsertProfile } = await import("../../src/lib/repo.ts");
+  await upsertProfile("u-rise", "riser", null, null);
+  await finalizeTakeover({
+    domain: reserved,
+    buyerUserId: "u-rise",
+    buyerHandle: "riser",
+    expectedVersion: 1,
+    paidCents: 1400,
+    providerPaymentId: "pi-reserved-rise",
+  });
 
   const market = await memory.listMarket(50);
   assert.ok(
@@ -191,6 +203,9 @@ test("reserved tags are dropped from every discovery surface", async () => {
 
   const claimed = await memory.listNewlyClaimed(50);
   assert.ok(!claimed.some((r) => r.domain === reserved), "reserved tag must not appear in newly claimed");
+
+  const rising = await memory.listFastestRising(50);
+  assert.ok(!rising.some((r) => r.domain === reserved), "reserved tag must not appear in fastest rising");
 
   resetMemoryMarket();
 });

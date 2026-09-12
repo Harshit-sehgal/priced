@@ -159,7 +159,10 @@ export async function listFastestRising(limit = DEFAULT_RISING_LIMIT, windowMs =
     .filter((s) => s.roseCents > 0);
 
   const best = bestRisePerDomain(candidates);
-  const top = rankRising(best, limit);
+  // Mirrors the Supabase path: rank wide, drop reserved, then trim. No
+  // operator blocklist without a database, so only the static one applies.
+  const ranked = rankRising(best, overFetch(limit));
+  const top = (await filterOutReserved(ranked, new Set<string>())).slice(0, limit);
   if (top.length === 0) return [];
 
   const rows = listDomainsByNames(top);
