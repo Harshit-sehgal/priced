@@ -1,8 +1,19 @@
--- Priced — operator moderation toolkit (§48).
--- PORTABLE COPY of supabase/migrations/20260913000001_operator_tooling.sql.
--- Applied as part of the bootstrap sequence (schema.sql, schema-extended.sql,
--- ops.sql) and covered by `npm run test:schema`, which diffs this against the
--- migration history. Keep the two in sync; the checker fails if they drift.
+-- Migration 20260913_000001 — operator moderation toolkit (§48).
+--
+-- WHY THIS MIGRATION EXISTS: this toolkit already existed in `db/ops.sql`, and
+-- DEPLOY.md names it as THE correction procedure ("operator-correct via
+-- db/ops.sql audit + reserved-domain/suspension actions"). But nothing ever
+-- applied that file: it is not in the migration history, not in the
+-- schema.sql + schema-extended.sql bootstrap, and not in the schema
+-- equivalence check. So `admin_audit` and every `ops_*` function were almost
+-- certainly absent from the hosted database, and the documented response to a
+-- legal takedown or an abusive account would have failed with "function does
+-- not exist" at exactly the moment it was needed.
+--
+-- Moderation tooling that is documented but not installed is not tooling.
+--
+-- Behaviour is otherwise identical to db/ops.sql, which is kept in sync as the
+-- portable bootstrap copy and is now covered by `npm run test:schema`.
 
 -- Audit trail for privileged actions.
 create table if not exists public.admin_audit (

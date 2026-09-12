@@ -82,7 +82,11 @@ async function applyMigrations(pool) {
 }
 
 async function applyPortable(pool) {
-  const files = ["schema.sql", "schema-extended.sql"];
+  // ops.sql is part of the bootstrap, not an optional extra: DEPLOY.md names
+  // it as the operator correction procedure. It was previously outside this
+  // check, which is exactly why admin_audit and every ops_* function silently
+  // existed in no database at all.
+  const files = ["schema.sql", "schema-extended.sql", "ops.sql"];
   for (const f of files) {
     await pool.query(await readFile(new URL(`../db/${f}`, import.meta.url), "utf8"));
   }
