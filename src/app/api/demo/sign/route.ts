@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { createHmac } from "node:crypto";
 import { rateLimit } from "@/lib/ratelimit";
 import { demoWebhookSecret } from "@/lib/demo-secret";
+import { clientIp } from "@/lib/client-ip";
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
 
   // Demo-only endpoint: disabled in any production-like environment.
   // A configured payment provider implies real money; isProdDatastore

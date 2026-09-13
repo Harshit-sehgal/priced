@@ -3,6 +3,7 @@
 import "server-only";
 import {
   getQuote,
+  getSaleByProviderPaymentId,
   finalizeTakeover,
   getProfileById,
   markQuoteStatus,
@@ -13,6 +14,10 @@ import {
   type TakeoverOutcome,
 } from "./repo.ts";
 import { logEvent } from "./logger.ts";
+// Static: payments.ts imports repo/demo-secret only, never takeover, so there
+// is no cycle to break here. The heavy Stripe SDK is still lazy — payments.ts
+// dynamically imports it inside loadStripe().
+import { getProviderForEvent, refundIdempotencyKey } from "./payments.ts";
 
 export type WebhookProcessingResult = {
   outcome: "processed" | "ignored" | "duplicate" | "failed";
@@ -65,7 +70,32 @@ export async function processSucceededPayment(args: {
   quoteId: string | null;
   paidCents: number | null;
 }): Promise<WebhookProcessingResult> {
+  // IDEMPOTENCY BEFORE DISPOSITION. A payment id that already funded a sale is
+  // never refundable, no matter what the quote now says, who the buyer is now,
+  // or how this delivery re-derived its amount. Checking it only inside
+  // finalizeTakeover (and gating the amount check on the caller's quote
+  // snapshot) is not enough: a simultaneous challenger that loses marks the
+  // quote `stale`, and if that write lands after the winner's `consumed` write,
+  // the next duplicate delivery of the winner's payment reads a terminal quote
+  // and refunds a sale that exists — buyer keeps the tag AND the money.
+  //
+  // The same lookup also covers: a buyer suspended after purchase, a profile
+  // deleted after purchase, a payload variant that drops the metadata/amount,
+  // and a currency-rejected duplicate — all of which previously reached a
+  // refund branch before the sales-idempotency lookup ran.
+  const existingSale = await getSaleByProviderPaymentId(args.paymentId);
+
   if (!args.quoteId) {
+    if (existingSale) {
+      logEvent("webhook_payment_duplicate_sale", "info", {
+        provider: args.provider,
+        event_id: args.eventId,
+        payment_id: args.paymentId,
+        sale_id: existingSale.id,
+        reason: "metadata_missing_on_duplicate",
+      });
+      return { outcome: "duplicate", saleId: existingSale.id, reason: "payment_already_finalized" };
+    }
     logEvent("webhook_payment_missing_quote", "warn", { provider: args.provider, event_id: args.eventId, payment_id: args.paymentId });
     return failedAfterRefund(
       "missing_quote_metadata",
@@ -75,12 +105,50 @@ export async function processSucceededPayment(args: {
 
   const quote = await getQuote(args.quoteId);
   if (!quote) {
+    if (existingSale) {
+      logEvent("webhook_payment_duplicate_sale", "info", {
+        provider: args.provider,
+        event_id: args.eventId,
+        payment_id: args.paymentId,
+        sale_id: existingSale.id,
+        reason: "quote_missing_on_duplicate",
+      });
+      return { outcome: "duplicate", saleId: existingSale.id, reason: "payment_already_finalized" };
+    }
     logEvent("webhook_payment_unknown_quote", "warn", { provider: args.provider, event_id: args.eventId, payment_id: args.paymentId, quote_id: args.quoteId });
     return failedAfterRefund(
       "unknown_quote",
       await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, null, "unknown_quote"),
     );
   }
+
+  if (existingSale) {
+    // Same idempotency semantics finalize_takeover applies under its lock:
+    // matching args are a duplicate delivery; different args are a critical
+    // conflict to alert on, never to refund (the payment funded its original
+    // sale).
+    const expectedCents = args.paidCents ?? quote.nextPriceCents;
+    const conflict =
+      existingSale.domain !== quote.domain ||
+      existingSale.buyerUserId !== quote.buyerUserId ||
+      existingSale.priceCents !== expectedCents;
+    if (conflict) {
+      logEvent("takeover_finalization_error", "error", {
+        provider: args.provider,
+        payment_id: args.paymentId,
+        quote_id: quote.id,
+        code: "IDEMPOTENCY_CONFLICT",
+      });
+      return { outcome: "failed", refunded: false, reason: "IDEMPOTENCY_CONFLICT" };
+    }
+    // The sale proves this quote was consumed, even if a concurrent loser's
+    // `stale` write (or any other terminal write) landed on top. Repair it.
+    if (quote.status !== "consumed") {
+      await markQuoteStatus(quote.id, "consumed");
+    }
+    return { outcome: "duplicate", saleId: existingSale.id, reason: "payment_already_finalized" };
+  }
+
   // Terminal quote states must never create a sale — cover the webhook race
   // where Stripe retries arrive after we already marked the quote.
   // Note: "consumed" is intentionally excluded here — a duplicate webhook for
@@ -88,17 +156,14 @@ export async function processSucceededPayment(args: {
   // same event) and is handled idempotently via finalizeTakeover + the
   // alreadyConsumed duplicate path below. Expiry for consumed quotes is also
   // ignored: the sale already happened, the TTL no longer matters.
+  // Every terminal status is handled identically — log, refund, report
+  // `quote_<status>`. This used to branch on expired/stale/cancelled first,
+  // but both arms were byte-for-byte identical, so the condition only chose
+  // between two indistinguishable paths. Enumerating the statuses here would
+  // also be a list that rots: a status added later would silently fall to the
+  // other arm. Handling them uniformly is both the existing behaviour and the
+  // one that cannot drift.
   if (quote.status !== "active" && quote.status !== "checkout_created" && quote.status !== "consumed") {
-    if (quote.status === "expired" || quote.status === "stale" || quote.status === "cancelled") {
-      logEvent("webhook_payment_terminal_quote", "warn", {
-        provider: args.provider,
-        payment_id: args.paymentId,
-        quote_id: quote.id,
-        quote_status: quote.status,
-      });
-      const reason = `quote_${quote.status}`;
-      return failedAfterRefund(reason, await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, reason));
-    }
     logEvent("webhook_payment_terminal_quote", "warn", {
       provider: args.provider,
       payment_id: args.paymentId,
@@ -157,24 +222,40 @@ export async function processSucceededPayment(args: {
     );
   }
 
-  if (args.paidCents == null) {
-    // A succeeded payment that asserts no amount is not payable: without the
-    // amount comparison there is no proof the buyer paid the quoted price.
-    // Fail closed into the mismatch branch (refund, terminal) rather than
-    // defaulting to the quote price and minting a sale on an unverified sum.
-    logEvent("payment_amount_missing", "error", { provider: args.provider, payment_id: args.paymentId, quote_id: quote.id, expected_cents: quote.nextPriceCents });
-    return failedAfterRefund(
-      "amount_mismatch",
-      await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, "amount_mismatch"),
-    );
-  }
-  if (args.paidCents !== quote.nextPriceCents) {
-    // Never apply a payment toward a different price (§50).
-    logEvent("payment_amount_mismatch", "error", { provider: args.provider, payment_id: args.paymentId, quote_id: quote.id, paid_cents: args.paidCents, expected_cents: quote.nextPriceCents });
-    return failedAfterRefund(
-      "amount_mismatch",
-      await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, "amount_mismatch"),
-    );
+  const alreadyConsumed = quote.status === "consumed";
+
+  // The amount check exists to stop a wrong-priced payment MINTING a sale. On
+  // an already-consumed quote it cannot do that: finalizeTakeover resolves
+  // this payment id against the existing sales row and either returns that
+  // sale or raises IDEMPOTENCY_CONFLICT. Running the check first therefore
+  // does no good and real harm — a duplicate delivery whose amount is
+  // re-derived differently (a payload variant that omits `tax`, say, which
+  // dodoAmountFromPayload explicitly tolerates) refunds a sale that is already
+  // funded, so the buyer keeps the tag AND gets their money back.
+  //
+  // This is the same defect migration 20260912000001 closed in SQL, on the
+  // TypeScript side of the lock: a check taken before the idempotency lookup
+  // is not a safe check. First deliveries still fail closed below.
+  if (!alreadyConsumed) {
+    if (args.paidCents == null) {
+      // A succeeded payment that asserts no amount is not payable: without the
+      // amount comparison there is no proof the buyer paid the quoted price.
+      // Fail closed into the mismatch branch (refund, terminal) rather than
+      // defaulting to the quote price and minting a sale on an unverified sum.
+      logEvent("payment_amount_missing", "error", { provider: args.provider, payment_id: args.paymentId, quote_id: quote.id, expected_cents: quote.nextPriceCents });
+      return failedAfterRefund(
+        "amount_mismatch",
+        await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, "amount_mismatch"),
+      );
+    }
+    if (args.paidCents !== quote.nextPriceCents) {
+      // Never apply a payment toward a different price (§50).
+      logEvent("payment_amount_mismatch", "error", { provider: args.provider, payment_id: args.paymentId, quote_id: quote.id, paid_cents: args.paidCents, expected_cents: quote.nextPriceCents });
+      return failedAfterRefund(
+        "amount_mismatch",
+        await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, "amount_mismatch"),
+      );
+    }
   }
 
   const outcome: TakeoverOutcome = await finalizeTakeover({
@@ -182,11 +263,12 @@ export async function processSucceededPayment(args: {
     buyerUserId: quote.buyerUserId,
     buyerHandle: profile.handle,
     expectedVersion: quote.expectedVersion,
-    paidCents: args.paidCents,
+    // On a consumed quote the amount is only a lookup key: the SQL idempotency
+    // check compares it against the committed sale and raises
+    // IDEMPOTENCY_CONFLICT (alert, never refund) if it genuinely disagrees.
+    paidCents: args.paidCents ?? quote.nextPriceCents,
     providerPaymentId: args.paymentId,
   });
-
-  const alreadyConsumed = quote.status === "consumed";
 
   if (outcome.ok) {
     // Detect idempotent replay via sales lookup so duplicate webhooks
@@ -204,7 +286,13 @@ export async function processSucceededPayment(args: {
   }
 
   if (outcome.code === "STALE_QUOTE") {
-    await markQuoteStatus(quote.id, "stale");
+    // Never clobber a consumed quote: a duplicate delivery for a different
+    // paymentId on an already-consumed quote must keep its consumed state
+    // so later retries take the idempotent replay path, not the terminal
+    // quote_stale pre-check path.
+    if (quote.status !== "consumed") {
+      await markQuoteStatus(quote.id, "stale");
+    }
     logEvent("payment_succeeded_takeover_stale", "warn", { provider: args.provider, payment_id: args.paymentId, quote_id: quote.id, domain: quote.domain });
     return failedAfterRefund(
       "stale_quote",
@@ -232,6 +320,18 @@ export async function processSucceededPayment(args: {
       outcome.code,
       await refundPaymentWithLedger(args.provider, args.eventId, args.paymentId, quote, "finalize_error"),
     );
+  }
+  if (outcome.code === "PAYMENT_ALREADY_REFUNDED") {
+    // The database refused the sale because this payment already has a refund
+    // intent (one payment id = one outcome). Do NOT refund again and do NOT
+    // retry: ack the webhook, alert, and let the refund ledger converge.
+    logEvent("takeover_blocked_payment_refunded", "error", {
+      provider: args.provider,
+      payment_id: args.paymentId,
+      quote_id: quote.id,
+      domain: quote.domain,
+    });
+    return { outcome: "failed", refunded: false, reason: "PAYMENT_ALREADY_REFUNDED" };
   }
   // IDEMPOTENCY_CONFLICT: critical alert condition (§56) — mismatched reuse
   // of a payment id. Do NOT refund: the payment already funded its original
@@ -268,6 +368,20 @@ async function refundPaymentWithLedger(
     });
     return { refunded: false, manualReview: true };
   }
+  if (claim.status === "already_finalized") {
+    // Cross-check from claim_refund_attempt: a sale already exists for this
+    // payment id, so it is not refundable. This is the race half of the
+    // one-payment-one-outcome invariant (the top-of-function sale lookup
+    // handles the sequential half). Ack, alert, never retry.
+    logEvent("refund_blocked_sale_exists", "error", {
+      provider,
+      payment_id: paymentId,
+      quote_id: quote?.id ?? null,
+      reason,
+      detail: claim.lastError,
+    });
+    return { refunded: false, manualReview: true };
+  }
   if (!claim.claimed || !claim.claimToken) {
     logEvent("refund_attempt_in_progress", "warn", {
       provider,
@@ -280,15 +394,32 @@ async function refundPaymentWithLedger(
   }
 
   try {
-    const { getPaymentProvider } = await import("./payments.ts");
-    const providerImpl = getPaymentProvider();
-    const res = await providerImpl.refundPayment(paymentId, reason);
+    // Pin execution to the event's owning provider, never the env-selected
+    // one: a Dodo<->Stripe switch (or key rotation) between payment and
+    // refund would otherwise send this payment id to the wrong provider,
+    // where it fails, burns a ledger attempt, and parks the payment in
+    // manual_review even though the owner would have refunded it.
+    const providerImpl = getProviderForEvent(provider);
+    const res = await providerImpl.refundPayment({
+      paymentId,
+      reason,
+      // Deterministic per payment, NOT per attempt: the refund ledger mints a
+      // fresh claim token on every granted attempt, so keying on the token
+      // defeats idempotency across retries. Per Dodo's contract ("one key per
+      // logical intent, reused across retries"), all attempts for one payment
+      // share one key and converge at the provider instead of double-refunding
+      // on timeout-after-success. See refundIdempotencyKey().
+      idempotencyKey: refundIdempotencyKey(provider, paymentId),
+    });
     if (!res.ok) {
       // Dodo can accept a refund request while it is still pending/review.
       // Do not issue another refund while the first one may still settle;
       // the provider's refund webhook will reconcile the durable ledger.
+      // `indeterminate` (timeout/abort/unreadable body) is ALSO terminal: the
+      // provider may have executed the refund, and retrying could double it.
       const providerPending = res.status === "pending" || res.status === "review";
-      const terminal = providerPending || claim.attempts >= MAX_REFUND_ATTEMPTS;
+      const indeterminate = res.indeterminate === true;
+      const terminal = providerPending || indeterminate || claim.attempts >= MAX_REFUND_ATTEMPTS;
       const completed = await completeRefundAttempt({
         provider,
         paymentId,
@@ -296,7 +427,14 @@ async function refundPaymentWithLedger(
         status: terminal ? "manual_review" : "failed",
         error: res.error,
       });
-      logEvent(providerPending ? "refund_pending" : terminal ? "refund_manual_review" : "refund_failed", "error", {
+      const event = indeterminate
+        ? "refund_indeterminate"
+        : providerPending
+          ? "refund_pending"
+          : terminal
+            ? "refund_manual_review"
+            : "refund_failed";
+      logEvent(event, "error", {
         provider,
         payment_id: paymentId,
         quote_id: quote?.id ?? null,

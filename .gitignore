@@ -1,13 +1,20 @@
 node_modules/
 .next/
+.open-next/
+.wrangler/
 out/
 .env
 .env.*
 !.env.example
+# Wrangler local secrets (Cloudflare's documented local-dev file).
+.dev.vars
+.dev.vars.*
 .vercel/
 supabase/.temp/
+worker-configuration.d.ts
 .DS_Store
 *.log
+.commandcode/
 .freebuff/
 .owner-reference.local.md
 tsconfig.tsbuildinfo

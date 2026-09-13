@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { getQuote, isProdDatastore, markQuoteStatus, setQuoteCheckout } from "@/lib/repo";
+import { getQuote, markQuoteStatus, setQuoteCheckout } from "@/lib/repo";
 import { getViewer, demoViewer } from "@/lib/auth";
-import { getConfiguredProviderName, getPaymentProvider } from "@/lib/payments";
+import { getPaymentProvider, isPaymentConfigConsistent } from "@/lib/payments";
 import { verifyTurnstile } from "@/lib/turnstile";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimitAll } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
 import { logEvent } from "@/lib/logger";
+import { clientIp } from "@/lib/client-ip";
 
 export async function POST(req: Request) {
   // JSON-only: cross-origin form posts cannot produce this content type (§46 CSRF).
@@ -26,10 +27,15 @@ export async function POST(req: Request) {
   }
   if (!user) return NextResponse.json({ error: "login_required" }, { status: 401 });
 
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const rlUser = await rateLimit(`checkout:${user.id}`, 20, 60_000);
-  const rlIp = await rateLimit(`checkout:ip:${ip}`, 30, 60_000);
-  if (!rlUser || !rlIp) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  const ip = clientIp(req.headers);
+  // Both dimensions were already awaited unconditionally before either result
+  // was tested, so batching them is behaviour-identical — one round-trip, two
+  // counters, same verdict.
+  const allowed = await rateLimitAll([
+    { key: `checkout:${user.id}`, limit: 20, windowMs: 60_000 },
+    { key: `checkout:ip:${ip}`, limit: 30, windowMs: 60_000 },
+  ]);
+  if (!allowed) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
   // Body size guard before JSON parse (abuse/DoS).
   const rawBody = await req.text().catch(() => "");
@@ -73,6 +79,16 @@ export async function POST(req: Request) {
   // Reuse the profile just fetched above.
   const checkoutHandle = viewerProfile?.handle ?? `user_${user.id.slice(0, 8)}`;
 
+  // Never accept a real payment while the authoritative datastore is only
+  // partially configured, and never run the demo provider against it (a
+  // deployment with a service-role key but no payment keys previously threw
+  // from getPaymentProvider() → 500). A mismatch is a deployment error: 503.
+  // This runs BEFORE the idempotent-reuse branch: handing back a stored
+  // session we can no longer process would take money nothing can finalize.
+  if (!isPaymentConfigConsistent()) {
+    return NextResponse.json({ error: "payment_datastore_not_configured" }, { status: 503 });
+  }
+
   // Idempotent retry: a double-click or network retry reuses the stored
   // provider session instead of opening a second payment session.
   if (quote.status === "checkout_created" && quote.checkoutPaymentId) {
@@ -83,13 +99,6 @@ export async function POST(req: Request) {
       props: { reused: true },
     });
     return NextResponse.json({ checkoutUrl: quote.checkoutUrl, providerPaymentId: quote.checkoutPaymentId, reused: true });
-  }
-
-  // Never accept a real payment while the authoritative datastore is only
-  // partially configured. Without this guard a deployment with a Dodo key
-  // but no service-role key could charge money against the in-memory adapter.
-  if (getConfiguredProviderName() !== "demo" && !isProdDatastore) {
-    return NextResponse.json({ error: "payment_datastore_not_configured" }, { status: 503 });
   }
 
   const provider = getPaymentProvider();
@@ -103,14 +112,30 @@ export async function POST(req: Request) {
       amountCents: quote.nextPriceCents,
       successUrl: `${base}/checkout/return?quote_id=${quote.id}`,
       cancelUrl: `${base}/domain/${quote.domain}?checkout=cancelled`,
+      // One quote maps to one provider session: retries for the same quote
+      // replay the same key so a timed-out create cannot mint an orphan.
+      idempotencyKey: quote.id,
     });
     // First writer wins — a concurrent second request reuses this session.
-    const stored = await setQuoteCheckout({
-      quoteId: quote.id,
-      provider: provider.name,
-      paymentId: checkout.providerPaymentId,
-      checkoutUrl: checkout.checkoutUrl,
-    });
+    // setQuoteCheckout throws QUOTE_NOT_CHECKOUTABLE when the quote turned
+    // terminal between our read and the claim: surface the quote state, not
+    // a provider session for a dead quote.
+    let stored;
+    try {
+      stored = await setQuoteCheckout({
+        quoteId: quote.id,
+        provider: provider.name,
+        paymentId: checkout.providerPaymentId,
+        checkoutUrl: checkout.checkoutUrl,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.startsWith("QUOTE_NOT_CHECKOUTABLE")) {
+        const status = msg.split(":")[1]?.trim() ?? quote.status;
+        return NextResponse.json({ error: `quote_${status}` }, { status: 409 });
+      }
+      throw e;
+    }
     await persistAnalyticsEvent({
       event: "checkout_started",
       domain: quote.domain,

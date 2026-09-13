@@ -1,13 +1,23 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/**
+ * Session-refresh middleware. The security headers (including the enforced
+ * Content-Security-Policy) live in `next.config.mjs` headers(), NOT here:
+ * middleware does not run on the routes the matcher excludes, so a
+ * middleware-set policy would be missing on `/api/health`, `/api/webhooks`,
+ * the pulse endpoint, the OG images and anything else added to the
+ * exclusions later.
+ */
 export default async function proxy(request: NextRequest) {
   // Skip if auth env not configured (demo mode: no Supabase).
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) return NextResponse.next();
+  if (!url || !anonKey) {
+    return NextResponse.next();
+  }
 
-  const response = NextResponse.next({ request: { headers: request.headers } });
+  const response = NextResponse.next();
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
@@ -40,12 +50,13 @@ export const config = {
     // by definition and are the most crawler-heavy paths on the site.
     // Exclusions that name ONE route are anchored with `$`; unanchored they
     // are prefixes, so a bare `api/health` would also silently exclude a
-    // future `/api/health/deep` and leave it with no session. `api/webhooks`,
-    // `api/demo` and `api/market/pulse` stay unanchored on purpose — those are
-    // whole subtrees that can never act on a user session.
+    // future `/api/health/deep` and leave it with no session. `api/webhooks`
+    // and `api/demo` are whole subtrees and keep a trailing `/` for the same
+    // reason: a bare `api/demo` would swallow a future `/api/demographics`.
+    // `api/market/pulse` is one route, so it is `$`-anchored.
     // `.*/opengraph-image$` is likewise anchored so a domain page whose slug
     // merely contains "opengraph-image" stays session-aware.
     // Everything else, including every session-bearing route, stays matched.
-    "/((?!_next/static|_next/image|favicon\\.ico$|api/webhooks|api/market/pulse|api/demo|api/health$|sitemap\\.xml$|robots\\.txt$|.*/opengraph-image$).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico$|api/webhooks/|api/market/pulse$|api/demo/|api/health$|sitemap\\.xml$|robots\\.txt$|.*/opengraph-image$).*)",
   ],
 };

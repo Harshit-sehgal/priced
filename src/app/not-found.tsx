@@ -1,5 +1,10 @@
 import Link from "next/link";
 
+// The auth proxy may refresh a session cookie before an unknown route reaches
+// the App Router. Keep the custom 404 compatible with that request-time work
+// instead of letting OpenNext fail with a static-to-dynamic error.
+export const dynamic = "force-dynamic";
+
 export default function NotFound() {
   return (
     <div className="stack" style={{ maxWidth: 560 }}>

@@ -2,12 +2,12 @@
 // Staging smoke: hits a deployed preview/staging URL and verifies the
 // deployed-environment E2E contract (spec item 15) without needing Dodo
 // credentials. Fails fast with actionable messages; use in CI preview jobs
-// or manually: STAGING_URL=https://<preview>.vercel.app node scripts/staging-smoke.mjs
+// or manually: STAGING_URL=https://<beta-origin> node scripts/staging-smoke.mjs
 
 const BASE = (process.env.STAGING_URL || process.argv[2] || "").replace(/\/+$/, "");
 if (!BASE) {
-  console.error("Usage: STAGING_URL=https://<preview>.vercel.app node scripts/staging-smoke.mjs");
-  console.error("  or: node scripts/staging-smoke.mjs https://<preview>.vercel.app");
+  console.error("Usage: STAGING_URL=https://<beta-origin> node scripts/staging-smoke.mjs");
+  console.error("  or: node scripts/staging-smoke.mjs https://<beta-origin>");
   process.exit(2);
 }
 
@@ -77,19 +77,30 @@ console.log(`Staging smoke against ${BASE}`);
   console.log("  ✓ POST /api/quotes rejects non-JSON (415)");
 }
 {
-  // Auth redirect guard: /auth/callback must exist (even if it redirects).
+  // Auth redirect guard: /auth/callback must redirect, not error.
   const { res } = await get("/auth/callback?code=fake&next=/");
-  if (![302, 307, 308].includes(res.status) && res.status !== 307) {
-    // In demo mode this may 302 to /login; in prod it also redirects. Just verify it doesn't 500.
-    if (res.status >= 500) fail(`GET /auth/callback expected redirect, got ${res.status}`);
+  if (![301, 302, 303, 307, 308].includes(res.status)) {
+    fail(`GET /auth/callback expected a redirect, got ${res.status}`);
   }
-  console.log("  ✓ /auth/callback redirects (no 500)");
+  console.log("  ✓ /auth/callback redirects");
 }
 {
-  // Vercel routing: unknown route should 404, not 500.
+  // Unknown routes must 404, not 500 or redirect. This was non-fatal while the
+  // custom 404 was broken; a page error of that class must fail the suite.
   const { res } = await get("/__smoke_nonexistent_404_probe__");
-  if (res.status !== 404) console.log(`  · GET /__smoke… returned ${res.status} (expected 404, non-fatal)`);
-  else console.log("  ✓ unknown route 404");
+  if (res.status !== 404) fail(`GET /__smoke… expected 404, got ${res.status}`);
+  console.log("  ✓ unknown route 404");
+}
+{
+  // Every public HTML route must render. These all returned 500 for an unknown
+  // period while liveness, db, redis and origin checks stayed green: OpenNext
+  // refuses a prerendered page that the session-refresh proxy makes dynamic at
+  // request time. The old suite missed it because it only fetched `/`.
+  for (const path of ["/login", "/welcome", "/checkout/mock", "/about", "/terms", "/privacy", "/refunds"]) {
+    const { res } = await get(path);
+    if (res.status !== 200) fail(`GET ${path} expected 200, got ${res.status}`);
+  }
+  console.log("  ✓ public HTML routes render (login, welcome, legal)");
 }
 
 console.log("Staging smoke: OK");

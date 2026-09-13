@@ -9,8 +9,14 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # Bounded: a hung `next start` or Docker pull must not burn the 360-minute
+    # default budget.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The repo has no step that needs the token after checkout.
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -41,6 +47,29 @@ jobs:
         run: npm run build
         env:
           # Build must not require real credentials; app falls back to demo mode.
+          NEXT_TELEMETRY_DISABLED: 1
+
+      # CI built the plain Next app but never the artifact that actually ships.
+      # Production runs on Cloudflare Workers via OpenNext, and that adaptation
+      # can fail on things `next build` is perfectly happy with: a Node API
+      # workerd does not implement, a middleware incompatibility, a bundling
+      # error. Without this, such a break passes CI green and is discovered at
+      # deploy time. Note OpenNext itself warns that Node.js middleware support
+      # on Cloudflare is experimental, and this app HAS middleware.
+      - name: Build the Cloudflare Worker (the real deploy artifact)
+        run: |
+          set -euo pipefail
+          # The deploy config must be tracked: `npm run cf:deploy` is documented
+          # but silently cannot run without it, and CI's build step would pass
+          # while the deploy path is broken.
+          test -f open-next.config.ts
+          test -f wrangler.jsonc
+          # This is a COMPILE GATE, not a deployable artifact: NEXT_PUBLIC_*
+          # must be exported at cf:build time to be inlined into the client
+          # bundle, and CI deliberately has no secrets. Deploys build locally
+          # with the public vars exported (DEPLOY.md §3).
+          npm run cf:build
+        env:
           NEXT_TELEMETRY_DISABLED: 1
 
       - name: Browser tests (§54)
@@ -88,11 +117,13 @@ jobs:
           curl -sf -X POST http://127.0.0.1:3112/api/analytics \
             -H 'content-type: application/json' \
             -d '{"event":"domain_opened","props":{"domain":"example.com"}}' | grep -q '"ok":true'
-          # Unknown taxonomy must be rejected with 422.
-          if curl -sf -X POST http://127.0.0.1:3112/api/analytics \
+          # Unknown taxonomy must be rejected with EXACTLY 422. The previous
+          # `curl -sf` only proved "non-2xx", so a 500 also passed.
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3112/api/analytics \
             -H 'content-type: application/json' \
-            -d '{"event":"not_a_real_event"}' 2>/dev/null; then
-            echo "expected 422 for unknown event"; exit 1;
+            -d '{"event":"not_a_real_event"}')
+          if [ "$status" != "422" ]; then
+            echo "expected 422 for unknown event, got $status"; exit 1;
           fi
           echo "analytics + health smoke passed"
         env:

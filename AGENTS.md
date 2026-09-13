@@ -127,9 +127,33 @@ Keep Stripe as an optional adapter only. Dodo remains the primary provider unles
 
 Do not enable Dodo Live Mode until the hosted sandbox integration is green and the remaining real-money launch gates are reviewed.
 
-## Current Vercel state
+## Active hosting state
 
-The existing Vercel project has been reused and renamed to `priced` in the owner's workspace. The project id is unchanged. Its current production alias remains `https://internet-price-tag.vercel.app`; use that as the stable beta origin until a custom domain is intentionally selected.
+The active free beta is now hosted on Cloudflare Workers. The existing Vercel
+project is retained as a rollback/reference deployment and is not the active
+beta origin. The active origin is
+`https://priced.harshit10sehgal.workers.dev`.
+
+## Current Cloudflare beta state
+
+- Worker name: `priced`
+- Account: the owner's authenticated Cloudflare account
+- Stable beta origin: `https://priced.harshit10sehgal.workers.dev`
+- Cloudflare Worker deployment is configured with the Supabase public URL/key,
+  server-only Supabase service-role key, Dodo Test Mode credentials, Upstash
+  REST credentials, and `NEXT_PUBLIC_APP_URL`.
+- The Dodo Test Mode webhook endpoint is
+  `https://priced.harshit10sehgal.workers.dev/api/webhooks/payments`.
+- Supabase Site URL and the `/auth/callback` redirect allowlist include this
+  Cloudflare origin.
+- `NEXT_PUBLIC_*` values are INLINED at `cf:build` time. Export them in the
+  build environment before building; Worker runtime secrets never reach the
+  browser. `cf:deploy` uploads the last build output and does not rebuild. See
+  `DEPLOY.md §3`.
+- Do not expose Worker secrets in browser code or ordinary untrusted previews.
+- The free beta must remain in Dodo Test Mode; do not enable Live Mode.
+
+The existing Vercel project has been reused and renamed to `priced` in the owner's workspace. The project id is unchanged. Its historical production alias remains `https://internet-price-tag.vercel.app` and may be used for rollback, but Cloudflare is the designated beta origin above.
 
 The GitHub Vercel deployment target has referenced workspace slug:
 
@@ -137,9 +161,9 @@ The GitHub Vercel deployment target has referenced workspace slug:
 
 The ChatGPT Vercel connector may receive `403 Forbidden` when querying that project/workspace directly. The authenticated Vercel CLI can inspect and manage the project.
 
-Git integration remains connected to `Harshit-sehgal/priced`; the production deployment aliases include the `git-main` deployment. The designated beta Production environment now has the Supabase public URL/key, server-only Supabase service-role key, Dodo Test Mode credentials, Upstash REST credentials, and `NEXT_PUBLIC_APP_URL` configured. Ordinary Preview deployments remain demo-only and do not receive those privileged credentials. The service-role key is never exposed in browser code or `NEXT_PUBLIC_*` variables.
+Git integration remains connected to `Harshit-sehgal/priced`; the former Vercel production deployment remains available for rollback. The active Cloudflare Worker has the Supabase public URL/key, server-only Supabase service-role key, Dodo Test Mode credentials, Upstash REST credentials, and `NEXT_PUBLIC_APP_URL` configured. Ordinary Preview deployments remain demo-only and do not receive those privileged credentials. The service-role key is never exposed in browser code or `NEXT_PUBLIC_*` variables.
 
-For sandbox and closed beta, first establish one stable Vercel beta/staging origin. A purchased custom domain is not required for integration testing.
+For sandbox and closed beta, use the stable Cloudflare Worker origin above. A purchased custom domain is not required for integration testing.
 
 Ordinary untrusted pull request previews should stay in demo mode and should not receive the Supabase service-role key, Dodo secrets, or other privileged credentials.
 
@@ -200,9 +224,9 @@ Never commit actual secret values.
 
 Tracks A, B, and C can proceed in parallel.
 
-### Track A: Vercel and Auth
+### Track A: Cloudflare and Auth
 
-- reuse/rename the existing Vercel project
+- deploy the existing application to the designated Cloudflare Worker
 - establish the stable beta URL
 - wire Supabase environment variables
 - configure Supabase Site URL and allowed redirects
@@ -217,7 +241,7 @@ Tracks A, B, and C can proceed in parallel.
 - exercise the real sandbox payment and refund matrix
 - fix implementation only when real provider behavior proves it necessary
 
-### Track C: Upstash and operations
+### Track C: Upstash and Cloudflare operations
 
 - create free Redis
 - wire rate-limit credentials to the designated beta deployment
@@ -232,7 +256,7 @@ Verify the full chain:
 
 `search -> login -> handle -> quote -> Dodo checkout -> signed webhook -> atomic takeover -> immutable history -> holder profile -> analytics -> Realtime -> share -> second challenger -> stale/refund race`
 
-Also run 10 and 25 simultaneous challenger races against the real hosted environment. Exactly one takeover may finalize for one market version.
+Also run 10 and 25 simultaneous challenger races against the real hosted environment. Exactly one takeover may finalize for one market version. The database-level 10/25 concurrency harness is already staging-verified; the remaining end-to-end payment race is blocked by Dodo Test Mode wallet funds for stale-payment refunds.
 
 ## Test commands
 

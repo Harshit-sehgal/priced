@@ -11,17 +11,20 @@ export default async function CheckoutReturnPage({ searchParams }: Params) {
   const quoteId = typeof sp.quote_id === "string" ? sp.quote_id : null;
   const quote = quoteId ? await getQuote(quoteId) : null;
 
+  const terminal = quote?.status === "stale" || quote?.status === "expired" || quote?.status === "cancelled";
+  const heading = quote?.status === "consumed" ? "You hold the tag." : terminal ? "This quote is no longer valid." : "Finalizing…";
+  const copy =
+    quote?.status === "consumed"
+      ? "Your payment settled and the takeover is recorded."
+      : terminal
+        ? `This quote ended as ${quote?.status}. If you were charged, the payment is refunded automatically. Get a fresh price on the domain page.`
+        : "We never treat this redirect as proof of payment. The signed webhook finalizes your takeover. Give it a few seconds, then check the domain page.";
+
   return (
     <div className="stack" style={{ maxWidth: 640 }}>
       <p className="eyebrow">Payment return</p>
-      <h1 className="display display-section">
-        {quote?.status === "consumed" ? "You hold the tag." : "Finalizing…"}
-      </h1>
-      <p className="muted">
-        {quote?.status === "consumed"
-          ? "Your payment settled and the takeover is recorded."
-          : "We never treat this redirect as proof of payment. The signed webhook finalizes your takeover. Give it a few seconds, then check the domain page."}
-      </p>
+      <h1 className="display display-section">{heading}</h1>
+      <p className="muted">{copy}</p>
       {quote ? (
         <p className="small muted">
           {quote.domain} · {money(quote.nextPriceCents)} · quote status: <span className="mono">{quote.status}</span>

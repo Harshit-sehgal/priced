@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import { money, quoteFor } from "@/lib/game.ts";
-import { getSale, getDomain } from "@/lib/repo";
+import { getSale, getDomainForDisplay, isDomainReserved } from "@/lib/repo";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -23,7 +23,12 @@ const appHost = process.env.NEXT_PUBLIC_APP_URL
 export default async function SaleOgImage({ params }: { params: Promise<{ saleId: string }> }) {
   const { saleId } = await params;
   const sale = await getSale(saleId);
-  const current = sale ? await getDomain(sale.domain) : null;
+  // Display read, not the strict money read: a domain reserved AFTER the sale
+  // made getDomain() throw, so every unfurl of that receipt 500'd its card.
+  // Reserved must consult the operator table too, or a DB-reserved tag's card
+  // would advertise a challenge that /domain/<tag> refuses.
+  const available = sale ? !(await isDomainReserved(sale.domain)) : false;
+  const current = sale && available ? await getDomainForDisplay(sale.domain) : null;
   // Next challenge price only when the buyer still holds the tag.
   const stillHolds = !!(sale && current && current.holderUserId === sale.buyerUserId);
   const next = current ? quoteFor({
@@ -66,9 +71,11 @@ export default async function SaleOgImage({ params }: { params: Promise<{ saleId
           </div>
           <div style={{ fontSize: 30, color: "#cdc8ba" }}>
             {sale
-              ? stillHolds
-                ? `next challenge: ${money(next!.nextPriceCents)} · anyone can take it`
-                : `taken from @${sale.previousHolderHandle ?? "nobody"} · now held by @${current?.holderHandle ?? "nobody"}`
+              ? !available
+                ? "operator-reserved · receipt remains in the ledger"
+                : stillHolds
+                  ? `next challenge: ${money(next!.nextPriceCents)} · anyone can take it`
+                  : `taken from @${sale.previousHolderHandle ?? "nobody"} · now held by @${current?.holderHandle ?? "nobody"}`
               : ""}
           </div>
         </div>

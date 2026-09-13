@@ -1,7 +1,8 @@
 import { ImageResponse } from "next/og";
 import { money } from "@/lib/game.ts";
 import { evaluateDomain } from "@/lib/domains.ts";
-import { getDomain } from "@/lib/repo";
+import { getDomain, isDomainReserved } from "@/lib/repo";
+import { safeDecodeURIComponent } from "@/lib/navigation";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -26,10 +27,25 @@ const appHost = process.env.NEXT_PUBLIC_APP_URL
 
 export default async function OgImage({ params }: { params: Promise<{ domain: string }> }) {
   const { domain } = await params;
-  const evalResult = evaluateDomain(decodeURIComponent(domain));
+  const evalResult = evaluateDomain(safeDecodeURIComponent(domain));
   const canonical = evalResult.canonicalDomain;
-  const row = canonical ? await getDomain(canonical) : null;
+  // getDomain() calls requireEligibleDomain() and THROWS on an ineligible
+  // domain (static blocklist / malformed), which used to make this route a
+  // guaranteed 500. Display reads are tolerant; the card renders an
+  // unavailable state instead.
+  const reserved = canonical ? await isDomainReserved(canonical) : false;
+  const row = canonical && evalResult.eligible && !reserved ? await getDomain(canonical) : null;
   const unclaimed = !row || !row.holderUserId;
+  // Nothing ineligible may advertise a $5 first claim: reserved tags say so,
+  // and malformed/unsupported ones render as unknown rather than purchasable.
+  const priceText = reserved ? "RESERVED" : !evalResult.eligible ? "—" : unclaimed ? "$5" : money(row.priceCents);
+  const holderText = reserved
+    ? "operator-reserved · not claimable"
+    : !evalResult.eligible
+      ? "not a priced tag"
+      : unclaimed
+        ? "unclaimed · first claim costs $5"
+        : `held by @${row.holderHandle}`;
 
   return new ImageResponse(
     (
@@ -55,10 +71,10 @@ export default async function OgImage({ params }: { params: Promise<{ domain: st
           <div style={{ fontSize: 92, fontWeight: 700 }}>{canonical ?? "unknown"}</div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 24 }}>
             <span style={{ fontSize: 120, fontWeight: 700, color: "#0a5c3d" }}>
-              {unclaimed ? "$5" : money(row.priceCents)}
+              {priceText}
             </span>
             <span style={{ fontSize: 30, color: "#615d4e" }}>
-              {unclaimed ? "unclaimed · first claim costs $5" : `held by @${row.holderHandle}`}
+              {holderText}
             </span>
           </div>
         </div>

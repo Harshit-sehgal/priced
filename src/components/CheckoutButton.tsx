@@ -112,10 +112,14 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `checkout failed (${res.status})`);
-      track("checkout_started", { quoteId });
-      if (body.checkoutUrl) {
-        window.location.assign(body.checkoutUrl);
+      // A provider session without a redirect URL is a retryable dead end.
+      // Without this branch the button stayed on "Opening checkout…" forever:
+      // busy was never cleared and no error was shown.
+      if (!body.checkoutUrl) {
+        throw new Error("Checkout is temporarily unavailable. Please try again.");
       }
+      track("checkout_started", { quoteId });
+      window.location.assign(body.checkoutUrl);
     } catch (e) {
       setBusy(false);
       setError(e instanceof Error ? e.message : "Checkout failed");

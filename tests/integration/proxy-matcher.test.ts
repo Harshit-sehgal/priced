@@ -63,6 +63,10 @@ test("exact-match exclusions are anchored, not prefixes", () => {
     "/api/health/deep",
     "/sitemapaxml",
     "/robotsatxt",
+    // Subtree exclusions keep their trailing slash for the same reason.
+    "/api/webhooksadmin",
+    "/api/demolition",
+    "/api/market/pulsecheck",
     // A domain whose slug merely contains the OG segment is still a real page.
     "/domain/opengraph-image.com",
   ]) {

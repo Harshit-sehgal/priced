@@ -5,6 +5,11 @@ import { defineConfig, devices } from "@playwright/test";
  * the app serves the in-memory market, the demo buyer, and simulated payments.
  * The demo buyer handle is locked once the welcome page is used, so the suite
  * calls POST /api/handle before any takeover test (idempotent for same handle).
+ *
+ * BUILD FOOTGUN: `next start` serves whatever is in `.next`. Run a plain
+ * `npm run build` (with no NEXT_PUBLIC_* exported) before this suite.
+ * `npm run cf:build` with the beta env inlines real Supabase config in both
+ * bundles, flips the app out of demo mode, and every handle setup then 401s.
  */
 export default defineConfig({
   testDir: "./tests/browser",

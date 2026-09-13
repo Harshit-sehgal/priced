@@ -21,14 +21,17 @@ import test from "node:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import pg from "pg";
-import { quoteFor } from "../../src/lib/game.ts";
+import { quoteFor, type DomainRecord } from "../../src/lib/game.ts";
 
 const DOCKER_IMAGE = "postgres:16-alpine";
-const CONTAINER = "ipt-pricing-parity-test";
-const PORT = 5545;
-const POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${PORT}/ipt`;
+// Unique per run, host port assigned by Docker. A fixed name + port made two
+// concurrent runs kill each other's database (the pre-boot `docker rm -f` hits
+// the shared name), failing every test at once and looking exactly like a
+// money-path regression. See the same note in finalize-rpc.test.ts.
+const CONTAINER = `ipt-pricing-parity-test-${process.pid}-${randomUUID().slice(0, 8)}`;
+let POSTGRES_URL = "";
 
-function sh(cmd, ...args) {
+function sh(cmd: string, ...args: string[]): string {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
@@ -37,7 +40,7 @@ function dockerAvailable() {
   return r.status === 0;
 }
 
-async function connectPool(retries = 30) {
+async function connectPool(retries = 30): Promise<pg.Pool> {
   for (let i = 0; i < retries; i++) {
     try {
       const pool = new pg.Pool({ connectionString: POSTGRES_URL, max: 5 });
@@ -50,7 +53,7 @@ async function connectPool(retries = 30) {
   throw new Error("postgres did not become ready in time");
 }
 
-async function runMigrations(client) {
+async function runMigrations(client: pg.Client | pg.Pool): Promise<void> {
   const { readFile, readdir } = await import("node:fs/promises");
 
   // Supabase-compat preamble: plain Postgres lacks the service_role role,
@@ -80,18 +83,21 @@ if (!hasDocker) {
   console.warn("[pricing-parity] Docker not available — skipping SQL/TS pricing parity tests.");
 }
 
-let client;
+let client: pg.Pool;
 
 test.before(async () => {
   if (!hasDocker) return;
-  spawnSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
   sh(
     "docker", "run", "-d", "--name", CONTAINER,
     "-e", "POSTGRES_USER=ipt", "-e", "POSTGRES_PASSWORD=ipt", "-e", "POSTGRES_DB=ipt",
-    "-p", `${PORT}:5432`,
+    "-p", "0:5432", // Docker picks a free host port — no port races
     "--health-cmd", "pg_isready -U ipt", "--health-interval=1s", "--health-timeout=1s", "--health-retries=15",
     DOCKER_IMAGE,
   );
+  const mapped = sh("docker", "port", CONTAINER, "5432/tcp").trim().split("\n")[0];
+  const hostPort = mapped.slice(mapped.lastIndexOf(":") + 1);
+  if (!/^\d+$/.test(hostPort)) throw new Error(`could not resolve mapped port from "${mapped}"`);
+  POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${hostPort}/ipt`;
   client = await connectPool();
   await runMigrations(client);
 });
@@ -108,7 +114,7 @@ function nextId() {
   return seq;
 }
 
-async function seedProfile(handle) {
+async function seedProfile(handle: string): Promise<string> {
   const id = randomUUID();
   await client.query(
     `insert into auth.users (id, email) values ($1, $2) on conflict (id) do nothing`,
@@ -118,7 +124,24 @@ async function seedProfile(handle) {
   return id;
 }
 
-async function finalize(args) {
+type FinalizeArgs = {
+  domain: string;
+  buyerUserId: string;
+  buyerHandle: string;
+  expectedVersion: number;
+  paidCents: number;
+  providerPaymentId: string;
+};
+type FinalizeResult =
+  | { ok: true; sale: Record<string, string> }
+  | { ok: false; message: string; code: string };
+
+/** Failure detail for assertion messages without losing union narrowing. */
+function detail(r: FinalizeResult): string {
+  return r.ok ? "ok" : r.message;
+}
+
+async function finalize(args: FinalizeArgs): Promise<FinalizeResult> {
   try {
     const res = await client.query("select * from public.finalize_takeover($1,$2,$3,$4,$5,$6)", [
       args.domain, args.buyerUserId, args.buyerHandle, args.expectedVersion,
@@ -126,7 +149,8 @@ async function finalize(args) {
     ]);
     return { ok: true, sale: res.rows[0] };
   } catch (e) {
-    return { ok: false, message: String(e.message), code: String(e.message).split(" ")[0].replace(/["']/g, "") };
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, message, code: message.split(" ")[0].replace(/["']/g, "") };
   }
 }
 
@@ -136,7 +160,7 @@ async function finalize(args) {
  * re-implementing the SQL arithmetic in the test, which would just be a fifth
  * copy of the formula.
  */
-async function sqlRequiredPrice(domain, expectedVersion, probeBuyerId, probeHandle) {
+async function sqlRequiredPrice(domain: string, expectedVersion: number, probeBuyerId: string, probeHandle: string): Promise<number> {
   const out = await finalize({
     domain, buyerUserId: probeBuyerId, buyerHandle: probeHandle,
     expectedVersion, paidCents: 1, providerPaymentId: `pi-probe-${randomUUID()}`,
@@ -149,7 +173,7 @@ async function sqlRequiredPrice(domain, expectedVersion, probeBuyerId, probeHand
 }
 
 /** Live market row in the shape game.ts reasons about. */
-async function liveRecord(domain) {
+async function liveRecord(domain: string): Promise<DomainRecord> {
   const res = await client.query("select * from public.domains where domain = $1", [domain]);
   const row = res.rows[0];
   if (!row) return { domain, holder: null, priceCents: 0, version: 0, history: [] };
@@ -163,7 +187,7 @@ async function liveRecord(domain) {
 }
 
 /** Puts a domain into a chosen held state so the ladder can hit exact boundaries. */
-async function seedDomainAt(domain, priceCents) {
+async function seedDomainAt(domain: string, priceCents: number): Promise<void> {
   if (priceCents === 0) return; // unclaimed: finalize_takeover materializes the row
   const handle = `parity-holder-${nextId()}`;
   const holderId = await seedProfile(handle);
@@ -226,7 +250,7 @@ test("SQL finalize_takeover and TS quoteFor agree at every ladder boundary", { s
       expectedVersion: record.version, paidCents: tsQuote.nextPriceCents,
       providerPaymentId: `pi-parity-${randomUUID()}`,
     });
-    assert.ok(paid.ok, `${rung.label}: quoteFor price was rejected by SQL: ${paid.message}`);
+    assert.ok(paid.ok, `${rung.label}: quoteFor price was rejected by SQL: ${detail(paid)}`);
     assert.equal(Number(paid.sale.price_cents), tsQuote.nextPriceCents);
 
     const after = await liveRecord(domain);
@@ -239,7 +263,7 @@ test("SQL and TS stay in lockstep across a compounding takeover ladder", { skip:
   // Every rung above is a synthetic seed; this one compounds for real, so a
   // rounding drift would accumulate instead of being reset each iteration.
   const domain = `parity-walk-${nextId()}.com`;
-  const seen = [];
+  const seen: number[] = [];
 
   for (let step = 0; step < 12; step += 1) {
     const record = await liveRecord(domain);
@@ -258,7 +282,7 @@ test("SQL and TS stay in lockstep across a compounding takeover ladder", { skip:
       expectedVersion: record.version, paidCents: tsQuote.nextPriceCents,
       providerPaymentId: `pi-walk-${step}-${randomUUID()}`,
     });
-    assert.ok(paid.ok, `step ${step}: ${paid.message}`);
+    assert.ok(paid.ok, `step ${step}: ${detail(paid)}`);
     seen.push(tsQuote.nextPriceCents);
   }
 

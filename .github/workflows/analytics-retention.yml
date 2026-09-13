@@ -1,0 +1,69 @@
+name: Analytics retention
+
+# The privacy policy promises product analytics are deleted after ~180 days.
+# `prune_analytics_events` was added to enforce that, but nothing called it —
+# so the promise was documentation, not behaviour. This runs it.
+#
+# Free-tier by design: GitHub Actions cron, no pg_cron (unavailable on the
+# Supabase free plan), no paid scheduler. The function deletes in bounded
+# batches and returns the row count, so it is called until it returns 0.
+#
+# SETUP (owner): add repository secrets
+#   SUPABASE_PROJECT_URL   e.g. https://<ref>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY
+# The job SKIPS cleanly when they are absent rather than failing, so the
+# workflow is safe to merge before the secrets exist — but note that while it
+# skips, nothing is being deleted and the privacy claim is not yet enforced.
+
+on:
+  schedule:
+    # 04:10 UTC daily — off-peak, and well clear of the 15-minute health check.
+    - cron: "10 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prune:
+    name: Prune analytics_events
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Prune in batches until nothing is left to delete
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Supabase secrets not configured — analytics retention is NOT running."
+            echo "Add SUPABASE_PROJECT_URL and SUPABASE_SERVICE_ROLE_KEY to enable it."
+            exit 0
+          fi
+
+          total=0
+          # Bounded loop: the function caps each call, so a large backlog needs
+          # several passes. 50 passes x 50k rows is far more than this database
+          # can hold; the cap only exists so a bug cannot spin forever.
+          for i in $(seq 1 50); do
+            deleted=$(curl --fail --silent --show-error --max-time 60 \
+              -X POST "${SUPABASE_URL%/}/rest/v1/rpc/prune_analytics_events" \
+              -H "apikey: ${SERVICE_ROLE_KEY}" \
+              -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+              -H "Content-Type: application/json" \
+              -d '{}')
+
+            # The RPC returns a bare integer row count.
+            if ! printf '%s' "$deleted" | grep -qE '^[0-9]+$'; then
+              echo "::error::Unexpected response from prune_analytics_events: ${deleted}"
+              exit 1
+            fi
+
+            total=$((total + deleted))
+            echo "pass ${i}: deleted ${deleted} (running total ${total})"
+            [ "$deleted" -eq 0 ] && break
+          done
+
+          echo "analytics retention complete — ${total} row(s) deleted"

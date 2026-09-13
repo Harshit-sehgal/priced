@@ -51,7 +51,8 @@ export default async function Home() {
         </div>
         <MarketTable rows={rows} />
         <p className="small muted" style={{ margin: 0 }}>
-          * according to this ridiculous website. Ranked by current symbolic price.
+          * according to this ridiculous website, sampled from the top 1,000 tags by price. Ranked
+          by current symbolic price.
         </p>
       </section>
 

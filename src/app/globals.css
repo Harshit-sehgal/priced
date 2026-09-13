@@ -269,15 +269,19 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .field { display: flex; flex-direction: column; gap: var(--space-2); }
 .field label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
-.field input {
+.field input,
+.field textarea {
   border: 2px solid var(--rule);
   background: var(--paper-raised);
   font-family: var(--font-mono);
+  /* 16px everywhere: below it, iOS Safari zooms the whole page on focus. */
   font-size: 16px;
   padding: 12px 14px;
   color: var(--ink);
 }
-.field input:focus { outline: 2px solid var(--money); outline-offset: 2px; }
+.field textarea { resize: vertical; min-height: 84px; }
+.field input:focus,
+.field textarea:focus { outline: 2px solid var(--money); outline-offset: 2px; }
 .field-error { color: var(--danger); font-size: 13px; }
 
 /* ---------- panels & receipt ---------- */
@@ -302,7 +306,8 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   border-bottom: 1px solid var(--rule-soft);
 }
 .ledger-row-history {
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto;
+  /* who · from · delta · amount · when — five cells, five tracks. */
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto auto;
 }
 .ledger-row .who { font-family: var(--font-mono); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .ledger-row .from { color: var(--ink-soft); font-size: 13px; overflow-wrap: anywhere; }
@@ -391,12 +396,13 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   * { animation: none !important; transition: none !important; }
 }
 
-/* Long domains in share buttons: truncate, never overflow the page. */
+/* Long domains in share buttons: allow wrapping rather than clipping.
+   text-overflow cannot ellipsize a flex container's anonymous text, so the
+   old nowrap+ellipsis pair hard-clipped labels at 320-375px. */
 .btn-block {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* Keyboard focus visibility (§18): never removed, only made consistent. */

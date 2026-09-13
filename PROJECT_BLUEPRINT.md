@@ -538,6 +538,10 @@ Measure search → quote, quote → checkout, checkout → paid takeover, takeov
 
 ## 23. Current state (truth, not plan)
 
+> **Authority note (2026-09-13):** the state below is historical context. The
+> current truth lives in `AGENTS.md`, `INTEGRATION_NOW.md`, and
+> `LAUNCH_CHECKLIST.md`, which override this section wherever they differ.
+
 ### What exists and is tested in this repo
 - Market engine: integer-cent pricing, quotes (5-minute TTL), version-checked
   atomic finalization via the `finalize_takeover` Postgres RPC (row-locked,
@@ -564,9 +568,11 @@ Measure search → quote, quote → checkout, checkout → paid takeover, takeov
   delta, first-claim marks, current-holder flag, totals
   (`src/components/HistoryLedger.tsx`).
 - Holder analytics: real COUNT aggregation over `analytics_events` (tag
-  views, unique sessions, profile views, share visits, CTA clicks, per-domain,
-  per-day) at `/u/[handle]/analytics`, owner-only, honest empty states
-  (`src/lib/holder-analytics.ts`).
+  views, profile views, share visits, CTA clicks, per-domain, per-day) at
+  `/u/[handle]/analytics`, owner-only, honest empty states
+  (`src/lib/holder-analytics.ts`). Distinct-session counting exists in the RPC
+  but is not displayed: server-rendered view events carry no session id, so it
+  is structurally 0.
 - Discovery: Highest Priced (market table), Most Contested, Recent Takeovers,
   Fastest Rising (challenger-driven rises only), Newly Claimed — all computed
   from the real ledger, none fabricated (`src/app/page.tsx`).
@@ -587,31 +593,37 @@ Measure search → quote, quote → checkout, checkout → paid takeover, takeov
 - Analytics persistence: `analytics_events` writes are no-ops without the
   datastore, so holder analytics intentionally reports "no datastore" rather
   than fake numbers.
-- Polling-based live refresh (Supabase Realtime needs the real project).
+- Live refresh: Supabase Realtime when the public env reached the client
+  bundle, otherwise the `/api/market/pulse` polling fallback (which is why the
+  pulse route must never short-circuit on server-side env).
 
-### What requires owner credentials (cannot be done in-repo)
-- Supabase project + migrations + auth providers + Realtime + backups.
-- Upstash Redis database + envs (Preview and Production).
-- Dodo Payments permission check, sandbox + live keys, PWYW product, webhook
-  secret.
-- Cloudflare Turnstile site/secret keys.
-- Vercel deploy, env separation, canonical `priced` domain.
-- Legal review of policy pages and product classification.
+### What still requires owner credentials or decisions
+- Real-money launch gates: legal review of the policy pages, live Dodo
+  credentials, production hosting plan compliance, disaster recovery, and the
+  closed beta (see `LAUNCH_CHECKLIST.md` / `BACKLOG.md` Lane D).
+- Dodo Test Mode wallet funds to close the hosted 10/25-way payment race
+  refunds.
+- A persistent error-alert destination (`SENTRY_DSN` or similar).
+- Cloudflare Turnstile keys (optional).
 
-### What is production verified vs locally verified
+### What is hosted-verified vs locally verified
 - Locally/CI verified: all tests above, including dockerized Postgres RPC
-  concurrency (25 racers, one winner) against real row locks.
-- NOT yet production verified: the real Supabase RPC under live traffic,
-  Dodo sandbox matrix, multi-instance rate limiting, Realtime against the
-  real project, OG cards in the X card validator, alerts wired to a
-  destination. LAUNCH_CHECKLIST.md tracks each.
+  concurrency (25 racers, one winner) and the schema-equivalence gate.
+- **Staging verified** on the Cloudflare beta: Supabase project/migrations/
+  auth/Realtime, Dodo Test Mode checkout + signed webhooks, Upstash
+  multi-instance rate limits, logical backup/restore, the 10-check smoke
+  suite, and the hosted analytics/profile/share journey. See
+  `INTEGRATION_NOW.md` for the evidence lines.
+- NOT yet verified: the full hosted payment race refund closure (provider
+  wallet blocked), OG cards in the X card validator, and anything else
+  `LAUNCH_CHECKLIST.md` still marks short.
 
 ### Incomplete or intentionally deferred
 - Priced Credits: spec + ledger migration exist, feature flag OFF, no user
   surface (docs/CREDITS.md).
-- Unique-visitor counting uses session ids from the client beacon: reliable
-  only when sessions are set; the analytics page labels them as sessions,
-  never as people.
+- Unique-visitor counting is deferred: view events are server-rendered with
+  no session id, so the metric is not displayed until a privacy-preserving
+  session source exists.
 - Trending: not implemented; needs a defensible definition before it exists.
 
 ---

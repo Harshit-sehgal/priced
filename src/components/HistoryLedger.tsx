@@ -7,15 +7,17 @@ function shortDate(iso: string): string {
 }
 
 /**
- * Provenance ledger for a tag (§8): every takeover, forever, in order.
- * Newest first in display; the list itself is chronological truth.
+ * Provenance ledger for a tag (§8): every takeover, newest first. Pass the
+ * full history when it is available; when the caller could only load a window,
+ * set `truncated` so the totals and "oldest" line are labelled as belonging to
+ * the shown slice instead of being presented as all-time truth.
  */
-export function HistoryLedger({ sales }: { sales: RepoSale[] }) {
+export function HistoryLedger({ sales, truncated = false }: { sales: RepoSale[]; truncated?: boolean }) {
   if (sales.length === 0) {
     return <p className="muted small">No transactions yet. This tag has never changed hands.</p>;
   }
 
-  // Sales arrive newest-first; compute highest price + totals from the truth.
+  // Sales arrive newest-first; compute highest price + totals from the slice.
   const chronological = [...sales].reverse();
   const highest = sales.reduce((a, s) => Math.max(a, s.priceCents), 0);
   const total = sales.reduce((a, s) => a + s.priceCents, 0);
@@ -24,7 +26,9 @@ export function HistoryLedger({ sales }: { sales: RepoSale[] }) {
     <div className="stack" style={{ gap: "var(--space-3)" }}>
       <div className="row-split">
         <p className="small muted mono" style={{ margin: 0 }}>
-          {sales.length} takeover{sales.length === 1 ? "" : "s"} · highest {money(highest)} · {money(total)} paid total
+          {truncated
+            ? `Latest ${sales.length} takeovers shown · highest ${money(highest)} · ${money(total)} paid in this view`
+            : `${sales.length} takeover${sales.length === 1 ? "" : "s"} · highest ${money(highest)} · ${money(total)} paid total`}
         </p>
       </div>
       <div className="ledger">
@@ -52,7 +56,7 @@ export function HistoryLedger({ sales }: { sales: RepoSale[] }) {
         })}
       </div>
       <p className="small muted" style={{ margin: 0 }}>
-        Oldest entry: {shortDate(chronological[0].createdAt)}. Sales are permanent; corrections
+        Oldest {truncated ? "shown" : "entry"}: {shortDate(chronological[0].createdAt)}. Sales are permanent; corrections
         require an operator intervention and never erase a record.
       </p>
     </div>

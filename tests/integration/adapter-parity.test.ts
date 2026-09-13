@@ -18,6 +18,7 @@ import {
   getProfileById,
   getProfileByHandle,
   updateProfileExtras,
+  listDomainsForHolder,
   seedDemoMarket,
   type RepoProfile,
 } from "../../src/lib/repo.ts";
@@ -120,4 +121,157 @@ test("demo seeding stores holder profiles under the same id key", async () => {
 
   // And a seeded handle is still exclusive against a real signup.
   await assert.rejects(() => upsertProfile("user-x", "seeded", null, null), CLAIM_HANDLE_TAKEN_MATCHER);
+});
+
+// The Supabase path capped its scans (1000 domains, 2000 sales) while the
+// in-memory path scanned everything. Since the whole node suite runs the
+// in-memory adapter, every test was exercising semantics production does not
+// have — and the two would report different headline numbers the moment the
+// market grew past a cap. The caps now live in shared.ts and both adapters
+// apply them; these tests fail if the memory path stops honouring them.
+test("marketValueCents honours the shared sampling cap", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const { MARKET_VALUE_SAMPLE_LIMIT } = await import("../../src/lib/repo/shared.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+
+  const over = MARKET_VALUE_SAMPLE_LIMIT + 25;
+  memory.seedDemoMarket(
+    Array.from({ length: over }, (_, i) => ({
+      domain: `cap-${i}.com`,
+      holderHandle: `h${i}`,
+      priceCents: 100,
+    })),
+  );
+
+  const value = await memory.marketValueCents();
+  assert.equal(
+    value,
+    MARKET_VALUE_SAMPLE_LIMIT * 100,
+    "must sum at most the cap, not every held domain",
+  );
+  resetMemoryMarket();
+});
+
+test("unheld domains never count toward market value", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+  memory.seedDemoMarket([{ domain: "held.com", holderHandle: "a", priceCents: 500 }]);
+  assert.equal(await memory.marketValueCents(), 500);
+  resetMemoryMarket();
+});
+
+// The blocklist exists to keep impersonation-dangerous tags out of the game,
+// and the Terms say a domain may be reserved AFTER it is already held. Before
+// this, only the sitemap and "Most Fought Over" honoured it, so reserving a
+// dangerous tag left it promoted on the homepage table, in Newly Claimed and
+// in the activity feed. A control that only half the surfaces respect is not
+// a control.
+test("reserved tags are dropped from every discovery surface", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  const { DEFAULT_RESERVED_DOMAINS } = await import("../../src/lib/domains.ts");
+  resetMemoryMarket();
+
+  const reserved = DEFAULT_RESERVED_DOMAINS[0]!; // statically blocklisted
+  memory.seedDemoMarket([
+    { domain: reserved, holderHandle: "impostor", priceCents: 900 },
+    { domain: "allowed-tag.com", holderHandle: "ok", priceCents: 500 },
+  ]);
+  // A takeover (previous price > 0) so the tag also qualifies for Fastest
+  // Rising — otherwise that surface would pass vacuously.
+  const { finalizeTakeover, upsertProfile } = await import("../../src/lib/repo.ts");
+  await upsertProfile("u-rise", "riser", null, null);
+  await finalizeTakeover({
+    domain: reserved,
+    buyerUserId: "u-rise",
+    buyerHandle: "riser",
+    expectedVersion: 1,
+    paidCents: 1400,
+    providerPaymentId: "pi-reserved-rise",
+  });
+
+  const market = await memory.listMarket(50);
+  assert.ok(
+    !market.some((d) => d.domain === reserved),
+    `${reserved} must not appear in the market table`,
+  );
+  assert.ok(market.some((d) => d.domain === "allowed-tag.com"), "ordinary tags still listed");
+
+  const recent = await memory.listRecentSales(50);
+  assert.ok(!recent.some((s) => s.domain === reserved), "reserved tag must not appear in activity");
+
+  const claimed = await memory.listNewlyClaimed(50);
+  assert.ok(!claimed.some((r) => r.domain === reserved), "reserved tag must not appear in newly claimed");
+
+  const rising = await memory.listFastestRising(50);
+  assert.ok(!rising.some((r) => r.domain === reserved), "reserved tag must not appear in fastest rising");
+
+  resetMemoryMarket();
+});
+
+test("filtering reserved rows does not under-fill a list", async () => {
+  const { resetMemoryMarket } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+  // Over-fetch must still return a full page of allowed rows.
+  memory.seedDemoMarket(
+    Array.from({ length: 30 }, (_, i) => ({
+      domain: `fill-${i}.com`,
+      holderHandle: `h${i}`,
+      priceCents: 500 + i,
+    })),
+  );
+  assert.equal((await memory.listMarket(25)).length, 25, "a full page is still returned");
+  resetMemoryMarket();
+});
+
+// The holder profile used to scan listMarket(1000) and filter — 1000 rows per
+// view, and tags beyond the market cap silently vanished from "Currently
+// held". A direct per-holder query must return exactly that holder's tags.
+test("listDomainsForHolder returns exactly one holder's tags, price DESC", async () => {
+  seedDemoMarket([
+    { domain: "holder-a-low.com", holderHandle: "@alice", priceCents: 500 },
+    { domain: "holder-a-high.com", holderHandle: "alice", priceCents: 1500 },
+    { domain: "holder-b.com", holderHandle: "bob", priceCents: 2500 },
+  ]);
+  const alice = await listDomainsForHolder("alice");
+  assert.deepEqual(
+    alice.map((d) => d.domain),
+    ["holder-a-high.com", "holder-a-low.com"],
+    "only alice's tags, price DESC",
+  );
+  // Display form normalizes the same way getProfileByHandle does.
+  assert.deepEqual(
+    (await listDomainsForHolder("@ALICE")).map((d) => d.domain),
+    ["holder-a-high.com", "holder-a-low.com"],
+  );
+});
+
+// Display reads must tolerate a domain that was ELIGIBLE when it sold and was
+// added to the operator blocklist later. The strict money read
+// (getDomain → requireEligibleDomain) throws for reserved tags, which used to
+// 500 the immutable receipt and hide the ledger; createQuote/finalize still
+// refuse, so nothing can be bought.
+test("display reads tolerate a domain reserved after it was sold", async () => {
+  const { resetMemoryMarket, getDomain, getDomainForDisplay, listSalesForDomain } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+  // A statically reserved domain with a historical sale, seeded directly: the
+  // current money path cannot create one, but a future blocklist expansion can.
+  memory.seedDemoMarket([{ domain: "fbi.gov", holderHandle: "someone", priceCents: 500 }]);
+
+  await assert.rejects(
+    () => getDomain("fbi.gov"),
+    /DOMAIN_INELIGIBLE/,
+    "the strict money-adjacent read must keep refusing reserved tags",
+  );
+
+  const row = await getDomainForDisplay("fbi.gov");
+  assert.equal(row?.holderHandle, "someone", "the receipt's live state must still resolve");
+  const sales = await listSalesForDomain("fbi.gov");
+  assert.equal(sales.length, 1, "the immutable ledger must still render");
+  assert.equal(sales[0]?.priceCents, 500);
+  resetMemoryMarket();
 });

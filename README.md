@@ -51,9 +51,9 @@ integration, dockerized real-Postgres RPC races, browser (desktop + mobile +
 **Not active:** Priced Credits (spec + ledger exist, flag off, see
 [docs/CREDITS.md](./docs/CREDITS.md)).
 
-**Current hosted state:** the Priced Supabase project already exists in `ap-south-1`, canonical migrations and hosted hardening are applied, required Realtime tables are enabled, and privileged RPCs are service-role only. Dodo Payments product verification/approval is confirmed by the owner. The repository is connected to the existing Vercel project, which has been renamed to `priced`; its stable production alias remains `https://internet-price-tag.vercel.app`.
+**Current hosted state:** the Priced Supabase project exists in `ap-south-1`; canonical migrations through the 2026-09-13 hardening wave (finalize NULL guards, read-path indexes, operator moderation toolkit) are applied and privilege-verified; required Realtime tables are enabled; privileged RPCs are service-role only. Dodo Payments product verification/approval is confirmed by the owner. The active free beta runs on Cloudflare Workers at `https://priced.harshit10sehgal.workers.dev`; the renamed Vercel project (`https://internet-price-tag.vercel.app`) is retained as a rollback/reference deployment only.
 
-**Remaining integration work before closed beta:** wire Supabase Auth with Google OAuth, configure Dodo Test Mode credentials/product/signed webhook, create the free Upstash Redis database, and run the complete hosted integration/payment/concurrency/Realtime/analytics test matrix. The existing Vercel project is already renamed to `priced`, with `https://internet-price-tag.vercel.app` as the stable beta origin. See [AGENTS.md](./AGENTS.md) and [INTEGRATION_NOW.md](./INTEGRATION_NOW.md).
+**Current beta status:** Supabase Auth (Google OAuth), Dodo Test Mode checkout + signed webhooks, free Upstash Redis rate limits, Realtime, holder analytics, share flow, and the hosted success journey are verified on the Cloudflare beta; the 10-check staging smoke, health/db/redis/origin probes, and a scheduled GitHub Actions health workflow are green. Remaining: complete Dodo Test Mode refund closure for the hosted 10/25-way payment race (blocked on the provider sandbox wallet balance), then the real-money launch gates. See [AGENTS.md](./AGENTS.md) and [INTEGRATION_NOW.md](./INTEGRATION_NOW.md).
 
 **Before real-money public launch:** review production hosting plan compliance, disaster recovery/logical backups, legal/support readiness, environment isolation, live Dodo credentials, and the closed-beta results.
 
@@ -88,7 +88,7 @@ Also see:
 - Postgres / Supabase (auth, data, optional realtime)
 - server-authoritative quotes and takeovers
 - payment-provider abstraction; Dodo Payments behind it (Stripe adapter + demo provider included)
-- Vercel deployment
+- Cloudflare Workers via OpenNext (active free beta; Vercel retained for rollback/reference)
 - realtime market updates
 - dynamic Open Graph/share cards
 
@@ -106,6 +106,6 @@ npm run test:browser
 
 The app runs with no credentials in demo mode using an in-memory market and simulated payments. For the current hosted beta strategy, follow `AGENTS.md` and `.env.example`; do not recreate Supabase or assume a second staging Supabase project is required.
 
-V1 eligibility is explicit: `ALLOWED_SUFFIXES` in `src/lib/domains.ts` is the launch allowlist; IDN/punycode (`xn--`) is rejected to avoid homograph/display risk (DEPLOY.md §9).
+V1 eligibility is explicit: `ALLOWED_SUFFIXES` in `src/lib/domains.ts` is the launch allowlist; IDN/punycode (`xn--`) is rejected to avoid homograph/display risk (DEPLOY.md §10).
 
 The market is a game/status product, **not an investment or domain-ownership product**. Never describe a holder as owning the underlying domain without an immediate explicit disclaimer.

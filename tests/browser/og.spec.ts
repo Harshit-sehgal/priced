@@ -45,4 +45,21 @@ test.describe("OG cards", () => {
     expect(res.status()).toBe(200);
     expect(res.headers()["content-type"]).toContain("image/png");
   });
+
+  // Reserved domains are ineligible, and the strict money read (getDomain →
+  // requireEligibleDomain) throws for them. The OG route used to call it anyway
+  // and 500'd every unfurl of a reserved tag; it now renders a reserved card.
+  test("reserved domain card renders a PNG instead of 500ing", async ({ request }) => {
+    const res = await request.get("/domain/fbi.gov/opengraph-image");
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-type"]).toContain("image/png");
+    expect((await res.body()).length).toBeGreaterThan(1_000);
+  });
+
+  // A malformed percent-escape used to throw URIError → 500 before validation.
+  test("malformed domain parameter renders the unknown card, never a 500", async ({ request }) => {
+    const res = await request.get("/domain/%25/opengraph-image");
+    expect(res.status()).toBe(200);
+    expect(res.headers()["content-type"]).toContain("image/png");
+  });
 });

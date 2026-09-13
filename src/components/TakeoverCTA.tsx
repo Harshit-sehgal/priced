@@ -30,8 +30,8 @@ export function TakeoverCTA({ domain, priceCents, kind, expectedVersion }: Props
         router.push(`/login?next=${encodeURIComponent(`/domain/${domain}`)}`);
         return;
       }
-      if (res.status === 409) {
-        const body = (await res.clone().json().catch(() => ({}))) as {
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
           code?: string;
           error?: string;
         };
@@ -40,14 +40,13 @@ export function TakeoverCTA({ domain, priceCents, kind, expectedVersion }: Props
           router.push(`/welcome?next=${encodeURIComponent(`/domain/${domain}`)}`);
           return;
         }
+        // These codes arrive with different statuses (SUSPENDED is 403,
+        // INELIGIBLE 422, ALREADY_HOLDER 409), so key off the code, not the
+        // status — the old 409-only branch made two of these messages dead.
         if (code === "SUSPENDED") throw new Error("Your account is suspended and cannot take tags.");
         if (code === "ALREADY_HOLDER") throw new Error("You already hold this tag.");
         if (code === "INELIGIBLE") throw new Error("This domain cannot be claimed.");
-        throw new Error(body.error ?? body.code ?? "quote failed");
-      }
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `quote failed (${res.status})`);
+        throw new Error(body.error ?? code ?? `quote failed (${res.status})`);
       }
       const { quoteId } = (await res.json()) as { quoteId: string };
       router.push(`/takeover/${quoteId}`);

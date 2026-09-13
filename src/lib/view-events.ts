@@ -19,6 +19,7 @@
 import "server-only";
 
 import { rateLimit } from "./ratelimit.ts";
+import { clientIp } from "./client-ip.ts";
 
 /** Server-rendered view events guarded by {@link persistViewEvent}. */
 export type ViewEvent = "profile_viewed" | "tag_viewed" | "share_visit";
@@ -33,6 +34,106 @@ export const VIEW_DEDUP_WINDOW_MS = 5 * 60_000;
 // distinct domain pages, each of which would otherwise be a fresh dedup key.
 export const VIEW_IP_LIMIT = 60;
 export const VIEW_IP_WINDOW_MS = 60_000;
+
+/**
+ * Per-instance, in-memory budget for anonymous telemetry. No network at all.
+ *
+ * WHY: the view and analytics guards spend Upstash commands on unauthenticated
+ * traffic, and they share ONE free-tier Redis with the quote / checkout /
+ * handle limiters — which fail CLOSED. Without a local gate, a flood of page
+ * views or /api/analytics POSTs can exhaust the shared command quota, and once
+ * Upstash starts refusing, `rateLimit` returns false for everything: the money
+ * path 429s. Telemetry must never be able to take down checkout.
+ *
+ * This gate runs BEFORE the first Redis call, so a flood is shed at ~zero cost
+ * and spends no quota. Being per-instance and memory-only it resets on cold
+ * start, which is fine: its only job is to bound what one instance can spend.
+ *
+ * TWO tiers, because one is not enough:
+ *  - PER-CLIENT caps what a single caller may consume. A purely global budget
+ *    let one client burn the whole allowance and suppress telemetry for every
+ *    other visitor on the instance until the window rolled — it bounded our
+ *    Redis spend but handed an attacker a cheap way to blind our analytics.
+ *  - GLOBAL still bounds the instance in aggregate, because a per-client cap
+ *    alone multiplies by the number of distinct clients and stops bounding
+ *    anything.
+ * Both are deliberately generous: this is a blast-radius cap, not the real
+ * limiter, and it fails closed because dropping a view always beats risking
+ * the money path.
+ */
+export const TELEMETRY_LOCAL_LIMIT = 300;
+export const TELEMETRY_GLOBAL_LIMIT = 3_000;
+export const TELEMETRY_LOCAL_WINDOW_MS = 60_000;
+
+type LocalBucket = { count: number; resetAt: number };
+const g = globalThis as unknown as { __iptTelemetryLocal?: Map<string, LocalBucket> };
+function localBuckets(): Map<string, LocalBucket> {
+  if (!g.__iptTelemetryLocal) g.__iptTelemetryLocal = new Map();
+  return g.__iptTelemetryLocal;
+}
+
+/** Test hook: clear the in-process telemetry budget. */
+export function resetTelemetryBudgetForTests(): void {
+  g.__iptTelemetryLocal?.clear();
+}
+
+/** Consume one unit from a named bucket; false once it is exhausted. */
+function take(buckets: Map<string, LocalBucket>, key: string, limit: number, now: number): boolean {
+  const bucket = buckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    buckets.set(key, { count: 1, resetAt: now + TELEMETRY_LOCAL_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= limit) return false;
+  bucket.count += 1;
+  return true;
+}
+
+/**
+ * True when this instance may still spend a Redis command on telemetry for
+ * this caller. Fails CLOSED once either tier is exhausted.
+ */
+export function withinLocalTelemetryBudget(dimension: string, ip = "unknown"): boolean {
+  const now = Date.now();
+  const buckets = localBuckets();
+  evictTelemetryBuckets(buckets, now);
+  // Per-client first: an over-budget client must not consume global allowance.
+  if (!take(buckets, `${dimension}:${ip}`, TELEMETRY_LOCAL_LIMIT, now)) return false;
+  return take(buckets, `${dimension}:__all__`, TELEMETRY_GLOBAL_LIMIT, now);
+}
+
+/** Maximum per-instance key count before eviction. See evictTelemetryBuckets. */
+export const MAX_LOCAL_TELEMETRY_BUCKETS = 5_000;
+
+/**
+ * Bound the per-client bucket map without handing a sustained flood a fresh
+ * global allowance.
+ *
+ * The old behaviour cleared the ENTIRE map on overflow, which reset the
+ * instance-wide counter too: a multi-window flood of distinct clients could
+ * buy another full global budget every time the map filled. Eviction now drops
+ * expired entries first, then the oldest per-client entries, and always keeps
+ * the global counter for the dimension being checked. Dropping a client's
+ * bucket can reset that client's allowance — the global tier is what bounds
+ * total spend, and it is never reset here.
+ */
+export function evictTelemetryBuckets(
+  buckets: Map<string, { count: number; resetAt: number }>,
+  now: number,
+): void {
+  if (buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS) return;
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
+  if (buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS) return;
+  // Preserve EVERY dimension's instance-wide counter, not just the one being
+  // checked: evicting another dimension's `__all__` key would hand that
+  // dimension a fresh global allowance.
+  for (const key of buckets.keys()) {
+    if (buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS) break;
+    if (!key.endsWith(":__all__")) buckets.delete(key);
+  }
+}
 
 // `/api/analytics` limits. Analytics is high-volume by nature, so these are
 // generous enough that a real browsing session never trips them and tight
@@ -75,6 +176,10 @@ export async function shouldCountView(args: {
   userAgent: string | null | undefined;
 }): Promise<boolean> {
   if (isBotUserAgent(args.userAgent)) return false;
+  // Spend no Redis command at all once this instance's telemetry budget is
+  // gone; the shared limiter is what checkout depends on. See the constant.
+  const ipKey = args.ip?.trim() || "unknown";
+  if (!withinLocalTelemetryBudget("view", ipKey)) return false;
   const ip = args.ip?.trim() || "unknown";
   const resource = args.resource.slice(0, 253).toLowerCase();
   // Dedup first: a repeat view short-circuits before the per-IP budget, so the
@@ -143,7 +248,7 @@ export async function persistViewEvent(args: {
     // module graph of anything that merely imports the pure guards above.
     const { headers } = await import("next/headers");
     const h = await headers();
-    const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const ip = clientIp(h);
     const countable = await shouldCountView({
       event: args.event,
       resource: args.resource,

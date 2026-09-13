@@ -6,6 +6,7 @@ import { track } from "@/lib/analytics";
 
 export function ShareButtons({ domain, priceCents, handle, saleId }: { domain: string; priceCents: number; handle: string; saleId: string }) {
   const [copied, setCopied] = useState<"post" | "link" | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "");
   const baseShareUrl = `${appUrl}/success/${saleId}`;
@@ -32,13 +33,17 @@ export function ShareButtons({ domain, priceCents, handle, saleId }: { domain: s
 
   async function copy(kind: "post" | "link") {
     const text = kind === "post" ? post : shareUrl;
+    setCopyError(null);
     try {
       await navigator.clipboard.writeText(text);
       track(kind === "post" ? "share_copied" : "share_clicked", { kind, domain, saleId });
       setCopied(kind);
       setTimeout(() => setCopied(null), 1600);
     } catch {
+      // Clipboard permissions can be denied or unavailable (non-secure
+      // context). Silent failure looked like a dead button.
       setCopied(null);
+      setCopyError("Couldn't copy automatically — long-press to select the text.");
     }
   }
 
@@ -64,6 +69,7 @@ export function ShareButtons({ domain, priceCents, handle, saleId }: { domain: s
         Sharing is the whole game: your post is how challengers find you. @{handle} ·{" "}
         {money(priceCents)}
       </p>
+      {copyError ? <p className="field-error small" style={{ margin: 0 }}>{copyError}</p> : null}
     </div>
   );
 }

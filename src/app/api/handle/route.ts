@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { claimHandle, getViewer, demoViewer } from "@/lib/auth";
 import { rateLimit } from "@/lib/ratelimit";
 import { sanitizeInternalPath } from "@/lib/navigation";
+import { clientIp } from "@/lib/client-ip";
 
 export async function POST(req: Request) {
   // JSON-only: cross-origin form posts cannot produce this content type (§46 CSRF).
@@ -25,7 +26,12 @@ export async function POST(req: Request) {
   if (!(await rateLimit(`handle:${user.id}`, 5, 60_000))) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
-  const ipForHandle = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  // Deliberately NOT batched with the per-user check above. That one returns
+  // early, so an already-denied user never increments the IP counter. Batching
+  // would advance both counters and make the IP limit quietly stricter — a
+  // behaviour change, and the short-circuit also saves a Redis command on the
+  // shared free-tier quota that the money-path limiters depend on.
+  const ipForHandle = clientIp(req.headers);
   if (!(await rateLimit(`handle:ip:${ipForHandle}`, 15, 60_000))) {
     return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
@@ -35,9 +41,12 @@ export async function POST(req: Request) {
   try {
     const raw = await req.text();
     if (raw.length > 4_096) return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
-    const body = JSON.parse(raw || "{}") as { handle?: string; next?: string };
+    const body = JSON.parse(raw || "{}") as { handle?: unknown; next?: unknown };
+    if (typeof body.handle !== "string") {
+      return NextResponse.json({ error: "invalid_handle", reason: "INVALID_HANDLE" }, { status: 400 });
+    }
     handle = body.handle ?? "";
-    next = sanitizeInternalPath(body.next);
+    next = sanitizeInternalPath(typeof body.next === "string" ? body.next : null);
   } catch {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }

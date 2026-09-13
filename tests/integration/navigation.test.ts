@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sanitizeInternalPath } from "../../src/lib/navigation.ts";
+import { safeDecodeURIComponent, sanitizeInternalPath } from "../../src/lib/navigation.ts";
 
 test("sanitizeInternalPath keeps same-origin relative paths", () => {
   assert.equal(sanitizeInternalPath("/"), "/");
@@ -72,4 +72,18 @@ test("legitimate internal paths survive sanitisation unchanged", () => {
   ]) {
     assert.equal(sanitizeInternalPath(value), value);
   }
+});
+
+// Route params are percent-decoded before validation. decodeURIComponent
+// throws URIError on malformed escapes, which surfaced as an unauthenticated
+// 500 on /domain/% and /u/% — public GETs that bots hit trivially. The decoder
+// must return the raw value and let the validators reject it.
+test("safeDecodeURIComponent never throws on malformed escapes", () => {
+  assert.equal(safeDecodeURIComponent("openai.com"), "openai.com");
+  assert.equal(safeDecodeURIComponent("openai%2Ecom"), "openai.com");
+  assert.equal(safeDecodeURIComponent("%"), "%");
+  assert.equal(safeDecodeURIComponent("%zz"), "%zz");
+  assert.equal(safeDecodeURIComponent("100%"), "100%");
+  assert.equal(safeDecodeURIComponent("%E0%A4%A"), "%E0%A4%A");
+  assert.equal(safeDecodeURIComponent("a%2Fb"), "a/b");
 });

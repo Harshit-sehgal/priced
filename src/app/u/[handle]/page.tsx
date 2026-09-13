@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { money } from "@/lib/game.ts";
-import { getProfileByHandle, listSalesForBuyer, listMarket } from "@/lib/repo";
+import { getProfileByHandle, listDomainsForHolder, listSalesForBuyer } from "@/lib/repo";
 import { isHandleValid } from "@/lib/domains.ts";
 import { persistViewEvent } from "@/lib/view-events";
+import { safeDecodeURIComponent } from "@/lib/navigation";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { HolderCta, HolderCtaInline } from "@/components/HolderCta";
 import { ProfileEditor } from "@/components/ProfileEditor";
@@ -12,9 +13,13 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ handle: string }> };
 
+// Holder history page size. Numbers and lists below are labelled as a window
+// when the slice is full, so "all time" is never claimed over truncated data.
+const SALES_PAGE_SIZE = 200;
+
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { handle } = await params;
-  const h = decodeURIComponent(handle).toLowerCase().replace(/^@/, "");
+  const h = safeDecodeURIComponent(handle).toLowerCase().replace(/^@/, "");
   if (!isHandleValid(h)) return { title: "Unknown holder", robots: { index: false } };
   const profile = await getProfileByHandle(h);
   if (!profile) {
@@ -22,6 +27,11 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
       title: `@${h} holds nothing yet`,
       robots: { index: false },
     };
+  }
+  // Suspended profiles render the hidden state; their metadata must not
+  // advertise them to crawlers either.
+  if (profile.suspendedAt) {
+    return { title: "Unknown holder", robots: { index: false, follow: false } };
   }
   const sales = await listSalesForBuyer(h, 1);
   const spent = sales.length > 0 ? `Latest: ${sales[0].domain} for ${money(sales[0].priceCents)}.` : "";
@@ -33,7 +43,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 
 export default async function HolderPage({ params }: Params) {
   const { handle } = await params;
-  const h = decodeURIComponent(handle).toLowerCase().replace(/^@/, "");
+  const h = safeDecodeURIComponent(handle).toLowerCase().replace(/^@/, "");
 
   if (!isHandleValid(h)) {
     return (
@@ -55,17 +65,20 @@ export default async function HolderPage({ params }: Params) {
     );
   }
 
-  const [sales, market] = await Promise.all([
-    listSalesForBuyer(h, 200),
-    listMarket(1000),
+  // Direct per-holder query: the market list is capped, so scanning it both
+  // fetched 1000 rows per profile view and silently dropped tags beyond the
+  // cap. The holder's own tags are few and this is one indexed lookup.
+  const [sales, held] = await Promise.all([
+    listSalesForBuyer(h, SALES_PAGE_SIZE),
+    listDomainsForHolder(h),
   ]);
+  const salesTruncated = sales.length >= SALES_PAGE_SIZE;
   // Holder analytics input: profile render counts a view (best-effort).
   // Guarded by persistViewEvent — bots are skipped and one (IP, handle) pair
   // counts once per dedup window, so a refresh/curl loop cannot forge numbers.
   // A skipped view still renders the page normally.
   await persistViewEvent({ event: "profile_viewed", resource: `u:${h}`, handle: h });
 
-  const held = market.filter((row) => row.holderHandle === h);
   const heldDomains = new Set(held.map((t) => t.domain));
   // Previously held: domains this profile ever bought but no longer holds.
   const everHeld = new Set(sales.map((s) => s.domain));
@@ -137,7 +150,9 @@ export default async function HolderPage({ params }: Params) {
         <div className="row-split">
           <h2 className="display display-section">Numbers</h2>
           <p className="small muted" style={{ margin: 0 }}>
-            {sales.length} takeover{sales.length === 1 ? "" : "s"} · {money(spentCents)} paid into the market
+            {salesTruncated
+              ? `Latest ${sales.length} takeovers · ${money(spentCents)} paid in this view`
+              : `${sales.length} takeover${sales.length === 1 ? "" : "s"} · ${money(spentCents)} paid into the market`}
           </p>
         </div>
         <dl className="stat-list">
@@ -146,7 +161,7 @@ export default async function HolderPage({ params }: Params) {
             <dd className="money">{held.length}</dd>
           </div>
           <div className="stat-row">
-            <dt>Tags taken, all time</dt>
+            <dt>Tags taken{salesTruncated ? ` (latest ${SALES_PAGE_SIZE})` : ", all time"}</dt>
             <dd className="money">{sales.length}</dd>
           </div>
           <div className="stat-row">
@@ -154,8 +169,8 @@ export default async function HolderPage({ params }: Params) {
             <dd>{largest ? <><Link href={`/domain/${largest.domain}`} className="mono">{largest.domain}</Link> · <span className="money">{money(largest.priceCents)}</span></> : "—"}</dd>
           </div>
           <div className="stat-row">
-            <dt>Most contested tag</dt>
-            <dd>{mostContested ? <><Link href={`/domain/${mostContested.domain}`} className="mono">{mostContested.domain}</Link> · <span className="money">{mostContested.sales}</span> takeovers</> : "—"}</dd>
+            <dt>Most rebought tag</dt>
+            <dd>{mostContested ? <><Link href={`/domain/${mostContested.domain}`} className="mono">{mostContested.domain}</Link> · bought <span className="money">{mostContested.sales}</span>× by this holder</> : "—"}</dd>
           </div>
         </dl>
       </section>
@@ -183,7 +198,7 @@ export default async function HolderPage({ params }: Params) {
 
       {previouslyHeld.length > 0 ? (
         <section className="section-rule stack">
-          <h2 className="display display-section">Previously held</h2>
+          <h2 className="display display-section">Previously held{salesTruncated ? ` (latest ${SALES_PAGE_SIZE})` : ""}</h2>
           <ul className="holding-list">
             {previouslyHeld.map((d) => (
               <li key={d} className="row-split">
@@ -196,7 +211,7 @@ export default async function HolderPage({ params }: Params) {
       ) : null}
 
       <section className="section-rule stack">
-        <h2 className="display display-section">Takeover history</h2>
+        <h2 className="display display-section">Takeover history{salesTruncated ? ` (latest ${SALES_PAGE_SIZE})` : ""}</h2>
         {sales.length === 0 ? (
           <p className="muted small">No takeovers yet.</p>
         ) : (

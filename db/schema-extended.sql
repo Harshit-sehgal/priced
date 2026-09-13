@@ -87,6 +87,8 @@ create index if not exists refunds_status_updated_idx
   on public.refunds(status, updated_at desc);
 create index if not exists refunds_payment_idx
   on public.refunds(provider, provider_payment_id);
+create index if not exists refunds_payment_id_idx
+  on public.refunds(provider_payment_id);
 
 -- ============ PAYMENT DISPUTES (20260912_000003) ============
 -- Chargeback ledger. Records and alerts; it deliberately does NOT reverse a
@@ -291,7 +293,9 @@ create or replace function public.claim_refund_attempt(
   p_lease_seconds integer default 600
 )
 returns table(claimed boolean, status text, attempts integer, claim_token uuid, last_error text)
-language plpgsql security definer set search_path = public, pg_temp
+language plpgsql
+security definer
+set search_path = public, pg_temp
 as $$
 declare
   r public.refunds%rowtype;
@@ -306,6 +310,15 @@ begin
      or nullif(trim(p_provider_event_id), '') is null
      or nullif(trim(p_reason), '') is null then
     raise exception 'refund claim requires provider, payment, event and reason';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_provider_payment_id, 0));
+  if exists (
+    select 1 from public.sales where provider_payment_id = p_provider_payment_id
+  ) then
+    return query select false, 'already_finalized'::text, 0, null::uuid,
+      'sale_exists: payment already funded a takeover';
+    return;
   end if;
 
   insert into public.refunds (
@@ -360,6 +373,81 @@ $$;
 revoke all on function public.claim_refund_attempt(text, text, text, text, bigint, integer, integer) from public;
 revoke all on function public.claim_refund_attempt(text, text, text, text, bigint, integer, integer) from anon, authenticated;
 grant execute on function public.claim_refund_attempt(text, text, text, text, bigint, integer, integer) to service_role;
+
+create or replace function public.reconcile_refund_event(
+  p_provider text,
+  p_provider_payment_id text,
+  p_provider_event_id text,
+  p_status text,
+  p_amount_cents bigint default null,
+  p_error text default null
+)
+returns table(status text, sale_exists boolean)
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  existing public.refunds%rowtype;
+  now_ts timestamptz := clock_timestamp();
+  sale_exists_held boolean := false;
+begin
+  if nullif(trim(p_provider), '') is null
+     or nullif(trim(p_provider_payment_id), '') is null
+     or nullif(trim(p_provider_event_id), '') is null then
+    raise exception 'refund reconcile requires provider, payment and event';
+  end if;
+  if p_status is null or p_status not in ('succeeded', 'manual_review') then
+    raise exception 'invalid refund reconcile status: %', p_status;
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_provider_payment_id, 0));
+
+  -- Same lock as finalize_takeover/claim_refund_attempt: the contradiction
+  -- verdict cannot race a finalization.
+  select exists (
+    select 1 from public.sales where provider_payment_id = p_provider_payment_id
+  ) into sale_exists_held;
+
+  select * into existing from public.refunds
+  where provider = p_provider and provider_payment_id = p_provider_payment_id
+  for update;
+
+  if found then
+    -- A settled refund is terminal: a later refund.failed must never
+    -- downgrade it to manual_review (an operator could then refund twice).
+    if existing.status = 'succeeded' then
+      return query select existing.status, sale_exists_held;
+      return;
+    end if;
+    update public.refunds
+    set status = p_status,
+        provider_event_id = p_provider_event_id,
+        claim_token = null,
+        lease_expires_at = null,
+        last_error = p_error,
+        updated_at = now_ts,
+        completed_at = now_ts,
+        amount_cents = coalesce(p_amount_cents, amount_cents)
+    where id = existing.id;
+    return query select p_status, sale_exists_held;
+    return;
+  end if;
+
+  insert into public.refunds (
+    provider, provider_payment_id, provider_event_id, reason, amount_cents,
+    status, attempts, last_error, updated_at, completed_at
+  ) values (
+    p_provider, p_provider_payment_id, p_provider_event_id, 'provider_refund_event',
+    p_amount_cents, p_status, 0, p_error, now_ts, now_ts
+  );
+  return query select p_status, sale_exists_held;
+end;
+$$;
+
+revoke all on function public.reconcile_refund_event(text, text, text, text, bigint, text) from public;
+revoke all on function public.reconcile_refund_event(text, text, text, text, bigint, text) from anon, authenticated;
+grant execute on function public.reconcile_refund_event(text, text, text, text, bigint, text) to service_role;
 
 drop policy if exists "public read domains" on public.domains;
 create policy "public read domains" on public.domains for select using (true);

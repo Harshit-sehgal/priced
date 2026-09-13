@@ -15,6 +15,15 @@ const NEXT_SERVER_STUB = `data:text/javascript,${encodeURIComponent(
     "}",
   ].join("\n"),
 )}`;
+// Route handlers import auth, which statically imports next/headers. In demo
+// mode that code path is never reached (isAuthConfigured is false), but the
+// module still has to resolve.
+const NEXT_HEADERS_STUB = `data:text/javascript,${encodeURIComponent(
+  [
+    "export async function cookies() { return { getAll: () => [], set: () => {} }; }",
+    "export async function headers() { return new Headers(); }",
+  ].join("\n"),
+)}`;
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -23,6 +32,9 @@ registerHooks({
     }
     if (specifier === "next/server") {
       return { url: NEXT_SERVER_STUB, shortCircuit: true };
+    }
+    if (specifier === "next/headers") {
+      return { url: NEXT_HEADERS_STUB, shortCircuit: true };
     }
     if (specifier.startsWith("@/")) {
       const base = path.join(ROOT, "src", specifier.slice(2));

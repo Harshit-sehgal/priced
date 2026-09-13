@@ -34,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               underlying entity. Prices are a game. <strong>Not the actual domain.</strong>
             </p>
             <nav className="footer-links small mono" aria-label="Legal">
+              <a href="/about">What this is</a>
               <a href="/terms">Terms</a>
               <a href="/privacy">Privacy</a>
               <a href="/refunds">Refunds</a>

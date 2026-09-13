@@ -145,6 +145,16 @@ test.describe("states QA (§17)", () => {
     await expectNoHorizontalOverflow(page);
   });
 
+  // A raw percent-escape used to make decodeURIComponent throw a URIError and
+  // 500 the page. Both public param routes must render their not-found state.
+  test("malformed percent-encoded params render the error states, never 500", async ({ page }) => {
+    await page.goto("/domain/%25");
+    await expect(page.getByText("That's not a domain we can price.")).toBeVisible();
+    await page.goto("/u/%25");
+    await expect(page.getByText("That handle doesn't exist here.")).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+  });
+
   test("expired/stale quote state fits without overflow", async ({ page }) => {
     await page.goto("/takeover/00000000-0000-4000-8000-000000000000");
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Quote not found.");

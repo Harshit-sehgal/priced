@@ -14,11 +14,18 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 
 const DOCKER_IMAGE = "postgres:16-alpine";
-const CONTAINER = "ipt-finalize-rpc-test";
-const PORT = 5544;
-const POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${PORT}/ipt`;
+// Unique per run, and the host port is assigned by Docker (`-p 0:5432`).
+//
+// A FIXED name + port made concurrent runs destroy each other: the harness
+// `docker rm -f`s the name before booting, so a second run killed the first
+// run's database and every test in it failed at once. That reads exactly like
+// "the money path is broken" — the most expensive possible false alarm, and it
+// matters more now that CI runs `test:pg` and `test:schema` as gates. A red
+// build nobody trusts is worse than no build.
+const CONTAINER = `ipt-finalize-rpc-test-${process.pid}-${randomUUID().slice(0, 8)}`;
+let POSTGRES_URL = "";
 
-function sh(cmd, ...args) {
+function sh(cmd: string, ...args: string[]): string {
   return execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
@@ -42,7 +49,7 @@ async function connectPool(retries = 30) {
   throw new Error("postgres did not become ready in time");
 }
 
-async function runMigrations(client) {
+async function runMigrations(client: pg.Client | pg.Pool): Promise<void> {
   const { readFile } = await import("node:fs/promises");
 
   // Supabase-compat preamble: plain Postgres lacks the service_role role,
@@ -79,19 +86,24 @@ if (!hasDocker) {
 }
 
 // Shared state: one container for the whole file (booting per-test is slow).
-let client;
+let client: pg.Pool;
 
 test.before(async () => {
   if (!hasDocker) return;
-  // idempotent cleanup of any stale run, then boot fresh
-  spawnSync("docker", ["rm", "-f", CONTAINER], { stdio: "ignore" });
+  // The name is unique per run, so there is no stale container to remove and
+  // nothing another concurrent run could be using.
   sh(
     "docker", "run", "-d", "--name", CONTAINER,
     "-e", "POSTGRES_USER=ipt", "-e", "POSTGRES_PASSWORD=ipt", "-e", "POSTGRES_DB=ipt",
-    "-p", `${PORT}:5432`,
+    "-p", "0:5432", // let Docker pick a free host port — no port races either
     "--health-cmd", "pg_isready -U ipt", "--health-interval=1s", "--health-timeout=1s", "--health-retries=15",
     DOCKER_IMAGE,
   );
+  // "0.0.0.0:49154" (and possibly a second IPv6 line) -> take the port.
+  const mapped = sh("docker", "port", CONTAINER, "5432/tcp").trim().split("\n")[0];
+  const hostPort = mapped.slice(mapped.lastIndexOf(":") + 1);
+  if (!/^\d+$/.test(hostPort)) throw new Error(`could not resolve mapped port from "${mapped}"`);
+  POSTGRES_URL = `postgres://ipt:ipt@127.0.0.1:${hostPort}/ipt`;
   client = await connectPool();
   await runMigrations(client);
 });
@@ -102,7 +114,7 @@ test.after(async () => {
 });
 
 // ----------------------------------------------------------------- helpers
-async function seedProfile(handle) {
+async function seedProfile(handle: string): Promise<string> {
   const id = randomUUID();
   // profiles.id normally references auth.users — create a stub auth user row.
   await client.query(
@@ -116,7 +128,18 @@ async function seedProfile(handle) {
   return id;
 }
 
-async function finalize(args) {
+type FinalizeArgs = {
+  domain: string;
+  buyerUserId: string;
+  buyerHandle: string;
+  expectedVersion: number | null;
+  paidCents: number | null;
+  providerPaymentId: string;
+};
+
+async function finalize(args: FinalizeArgs): Promise<
+  { ok: true; sale: Record<string, string> } | { ok: false; code: string }
+> {
   try {
     const res = await client.query("select * from public.finalize_takeover($1,$2,$3,$4,$5,$6)", [
       args.domain, args.buyerUserId, args.buyerHandle, args.expectedVersion,
@@ -124,7 +147,7 @@ async function finalize(args) {
     ]);
     return { ok: true, sale: res.rows[0] };
   } catch (e) {
-    const code = String(e.message).split(" ")[0].replace(/["']/g, "");
+    const code = String(e instanceof Error ? e.message : e).split(" ")[0].replace(/["']/g, "");
     return { ok: false, code };
   }
 }
@@ -169,6 +192,50 @@ test("wrong price is rejected with WRONG_PRICE", { skip: !hasDocker }, async () 
   });
   assert.ok(!out.ok);
   assert.equal(out.code, "WRONG_PRICE");
+});
+
+// `x <> NULL` is NULL, which an `if` treats as false — so a NULL argument used
+// to SKIP its guard instead of failing it. These calls are service-role-only
+// (the webhook always passes numbers), but a guard that vanishes on NULL is
+// not a guard. Migration 20260913000002 makes each comparison explicit.
+test("a NULL expected version cannot skip the staleness guard", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-null-version");
+  // Move the domain to version 1 so there is a real stale state to skip past.
+  await finalize({
+    domain: "rpc-null-version.com", buyerUserId: userId, buyerHandle: "rpc-null-version",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: "pi-rpc-null-version-0",
+  });
+  const other = await seedProfile("rpc-null-version-2");
+  const out = await finalize({
+    domain: "rpc-null-version.com", buyerUserId: other, buyerHandle: "rpc-null-version-2",
+    expectedVersion: null, paidCents: 1000, providerPaymentId: "pi-rpc-null-version-1",
+  });
+  assert.ok(!out.ok);
+  assert.equal(out.code, "STALE_QUOTE", "NULL must not finalize over a stale market");
+});
+
+test("a NULL paid amount cannot skip the price guard", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-null-price");
+  const out = await finalize({
+    domain: "rpc-null-price.com", buyerUserId: userId, buyerHandle: "rpc-null-price",
+    expectedVersion: 0, paidCents: null, providerPaymentId: "pi-rpc-null-price-0",
+  });
+  assert.ok(!out.ok);
+  assert.equal(out.code, "WRONG_PRICE", "NULL must not mint a sale");
+});
+
+test("a NULL amount on a replay is a conflict, not a matching sale", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-null-replay");
+  await finalize({
+    domain: "rpc-null-replay.com", buyerUserId: userId, buyerHandle: "rpc-null-replay",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: "pi-rpc-null-replay-0",
+  });
+  const replay = await finalize({
+    domain: "rpc-null-replay.com", buyerUserId: userId, buyerHandle: "rpc-null-replay",
+    expectedVersion: 0, paidCents: null, providerPaymentId: "pi-rpc-null-replay-0",
+  });
+  assert.ok(!replay.ok);
+  assert.equal(replay.code, "IDEMPOTENCY_CONFLICT");
 });
 
 test("stale version is rejected with STALE_QUOTE", { skip: !hasDocker }, async () => {
@@ -303,7 +370,13 @@ test("25 concurrent takeovers of a HELD domain: one winner at exactly +1% (min $
   );
 
   const winners = attempts.filter((a) => a.ok);
+  const stale = attempts.filter((a) => !a.ok && a.code === "STALE_QUOTE");
   assert.equal(winners.length, 1);
+  assert.equal(
+    stale.length,
+    24,
+    `24 stale losers, got ${stale.length} (other codes: ${JSON.stringify(attempts.filter((a) => !a.ok).map((a) => a.code))})`,
+  );
   assert.equal(winners[0].sale.price_cents, String(takeoverCents));
   assert.equal(winners[0].sale.previous_price_cents, "500");
   const d = await client.query("select version, price_cents from public.domains where domain = $1", [domain]);
@@ -317,13 +390,33 @@ test("IDEMPOTENCY_CONFLICT: same payment id with different args raises", { skip:
     domain: "rpc-conflict.com", buyerUserId: userId, buyerHandle: "rpc-conflict",
     expectedVersion: 0, paidCents: 500, providerPaymentId: "pi-rpc-conflict-1",
   });
-  const out = await finalize({
+
+  // SAME payment id, different amount → the fast-path conflict branch.
+  const wrongAmount = await finalize({
     domain: "rpc-conflict.com", buyerUserId: userId, buyerHandle: "rpc-conflict",
-    expectedVersion: 0, paidCents: 500, providerPaymentId: "pi-rpc-conflict-1-different",
+    expectedVersion: 0, paidCents: 999, providerPaymentId: "pi-rpc-conflict-1",
   });
-  // different payment id → normal second-claim path at the new price.
-  assert.ok(!out.ok);
-  assert.equal(out.code, "STALE_QUOTE");
+  assert.ok(!wrongAmount.ok);
+  assert.equal(wrongAmount.code, "IDEMPOTENCY_CONFLICT");
+
+  // SAME payment id, different domain/buyer → also a conflict, never a second
+  // sale funded by one payment.
+  const other = await seedProfile("rpc-conflict-2");
+  const wrongDomain = await finalize({
+    domain: "rpc-conflict-other.com", buyerUserId: other, buyerHandle: "rpc-conflict-2",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: "pi-rpc-conflict-1",
+  });
+  assert.ok(!wrongDomain.ok);
+  assert.equal(wrongDomain.code, "IDEMPOTENCY_CONFLICT");
+
+  // A different payment id is a normal second claim at the new price (stale
+  // version), which is what this test previously conflated with a conflict.
+  const freshPayment = await finalize({
+    domain: "rpc-conflict.com", buyerUserId: other, buyerHandle: "rpc-conflict-2",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: "pi-rpc-conflict-2",
+  });
+  assert.ok(!freshPayment.ok);
+  assert.equal(freshPayment.code, "STALE_QUOTE");
 });
 
 test("holder_analytics RPC aggregates real counts SQL-side", { skip: !hasDocker }, async () => {
@@ -351,7 +444,15 @@ test("holder_analytics RPC aggregates real counts SQL-side", { skip: !hasDocker 
   const res = await client.query("select public.holder_analytics($1, $2) as out", [
     "rpc-analytics", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
   ]);
-  const a = res.rows[0].out;
+  const a = res.rows[0].out as {
+    tag_views: number;
+    tag_view_sessions: number;
+    profile_views: number;
+    share_visits: number;
+    cta_clicks: number;
+    by_domain: Array<{ domain: string; tag_views: number; unique_sessions: number }>;
+    daily: Array<{ day: string; views: number }>;
+  };
   assert.equal(a.tag_views, 5); // 3 own-domain + 2 other.com, excluding 40-day-old and someone-else
   assert.equal(a.tag_view_sessions, 3); // s1, s2, s3
   assert.equal(a.profile_views, 1);
@@ -387,7 +488,7 @@ test("concurrent duplicate delivery returns the existing sale, never STALE_QUOTE
   const userId = await seedProfile("rpc-dupe");
   const domain = "rpc-dupe-race.com";
   const paymentId = "pi-rpc-dupe-race";
-  const call = (c) =>
+  const call = (c: pg.PoolClient) =>
     c.query("select * from public.finalize_takeover($1,$2,$3,$4,$5,$6)", [
       domain, userId, "rpc-dupe", 0, 500, paymentId,
     ]);
@@ -402,17 +503,27 @@ test("concurrent duplicate delivery returns the existing sale, never STALE_QUOTE
     // Second delivery starts while the winner is still uncommitted, so its
     // own sales lookup sees nothing and it parks on the domains row lock.
     await loser.query("begin");
-    const pending = call(loser).then(
-      (r) => ({ ok: true, sale: r.rows[0] }),
-      (e) => ({ ok: false, code: String(e.message).split(" ")[0] }),
+    let resolved = false;
+    const pending: Promise<{ ok: true; sale: Record<string, string> } | { ok: false; code: string }> = call(loser).then(
+      (r) => {
+        resolved = true;
+        return { ok: true, sale: r.rows[0] };
+      },
+      (e: unknown) => {
+        resolved = true;
+        return { ok: false, code: String(e instanceof Error ? e.message : e).split(" ")[0] };
+      },
     );
     await new Promise((r) => setTimeout(r, 400)); // let it reach the lock
+    // Negative control: if the loser already resolved, it is NOT parked on the
+    // lock and the interleaving below proves nothing.
+    assert.equal(resolved, false, "loser must still be blocked on the row lock before the winner commits");
     await winner.query("commit");
 
     const second = await pending;
     await loser.query("commit").catch(() => {});
 
-    assert.ok(second.ok, `duplicate delivery must not fail (got ${second.code})`);
+    assert.ok(second.ok, `duplicate delivery must not fail (got ${second.ok ? "ok" : second.code})`);
     assert.equal(second.sale.id, saleId, "must return the SAME sale, not a refundable error");
 
     const count = await client.query(
@@ -423,5 +534,335 @@ test("concurrent duplicate delivery returns the existing sale, never STALE_QUOTE
   } finally {
     winner.release();
     loser.release();
+  }
+});
+
+// Regression for the refund-reconciliation downgrade race in
+// src/lib/repo/supabase.ts (reconcileRefundProviderEvent). That function read
+// the refund row, returned early if it was already `succeeded`, and otherwise
+// ran an unguarded UPDATE. A refund.succeeded event committing between the read
+// and the write was therefore overwritten back to `manual_review` by a late
+// refund.failed — and an operator could then refund money that had already
+// been returned. The fix is the `status <> 'succeeded'` predicate on the
+// UPDATE, which Postgres re-evaluates against the latest committed row version
+// when the blocked update wakes (READ COMMITTED).
+//
+// This test pins that exact SQL semantics with a forced interleaving, and a
+// negative control proves the guard is what prevents the downgrade: without
+// the predicate on a second row, the loser's write does overwrite succeeded.
+test("a blocked refund failure update cannot downgrade a settled refund", { skip: !hasDocker }, async () => {
+  await client.query(`
+    insert into public.refunds (provider, provider_payment_id, provider_event_id, reason, status, attempts)
+    values
+      ('dodo', 'pi-recon-guard', 'evt-recon-guard', 'stale_quote', 'manual_review', 1),
+      ('dodo', 'pi-recon-unguarded', 'evt-recon-unguarded', 'stale_quote', 'manual_review', 1)
+  `);
+
+  async function interleave(paymentId: string, guarded: boolean): Promise<number | null> {
+    const winner = await client.connect();
+    const loser = await client.connect();
+    try {
+      await winner.query("begin");
+      await winner.query(
+        "update public.refunds set status = 'succeeded', completed_at = now() where provider = 'dodo' and provider_payment_id = $1",
+        [paymentId],
+      );
+
+      await loser.query("begin");
+      const predicate = guarded ? "and status <> 'succeeded'" : "";
+      let resolved = false;
+      const pending = loser.query(
+        `update public.refunds set status = 'manual_review', last_error = 'late failure' where provider = 'dodo' and provider_payment_id = $1 ${predicate}`,
+        [paymentId],
+      ).then((r) => {
+        resolved = true;
+        return r;
+      });
+      await new Promise((r) => setTimeout(r, 400)); // let it reach the row lock
+      // Negative control: the winner's uncommitted update must keep this
+      // statement blocked; otherwise the interleaving proves nothing.
+      assert.equal(resolved, false, "loser update must still be blocked before the winner commits");
+      await winner.query("commit");
+      const result = await pending;
+      await loser.query("commit");
+      return result.rowCount;
+    } finally {
+      winner.release();
+      loser.release();
+    }
+  }
+
+  const guardedRows = await interleave("pi-recon-guard", true);
+  assert.equal(guardedRows, 0, "guarded update must match zero rows after the success commits");
+
+  const unguardedRows = await interleave("pi-recon-unguarded", false);
+  assert.equal(unguardedRows, 1, "negative control: without the predicate the downgrade would land");
+
+  const statuses = await client.query(
+    "select provider_payment_id, status from public.refunds where provider = 'dodo' and provider_payment_id in ('pi-recon-guard','pi-recon-unguarded')",
+  );
+  const byPayment = Object.fromEntries(statuses.rows.map((r) => [r.provider_payment_id, r.status]));
+  assert.equal(byPayment["pi-recon-guard"], "succeeded", "settled refund stays settled");
+  assert.equal(byPayment["pi-recon-unguarded"], "manual_review", "control row shows the downgrade the guard prevents");
+});
+
+// ---------------------------------------------------------------------------
+// One payment id, one outcome (migration 20260913000005). Before this, a
+// refunded payment could still fund a takeover on a later event id (the
+// refund branches do not all make the quote terminal), and a finalized payment
+// could still be refunded by a racing claim.
+test("a payment with a refund intent cannot finalize", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-outcome-a");
+  const paymentId = "pi-outcome-refund-first";
+  await client.query(
+    `insert into public.refunds (provider, provider_payment_id, provider_event_id, reason, status, attempts)
+     values ('dodo', $1, 'evt-outcome-a', 'amount_mismatch', 'attempting', 1)`,
+    [paymentId],
+  );
+  const out = await finalize({
+    domain: "rpc-outcome-a.com", buyerUserId: userId, buyerHandle: "rpc-outcome-a",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: paymentId,
+  });
+  assert.ok(!out.ok);
+  assert.equal(out.code, "PAYMENT_REFUNDING");
+  const sales = await client.query("select count(*)::int n from public.sales where provider_payment_id = $1", [paymentId]);
+  assert.equal(sales.rows[0].n, 0, "no sale may be funded by a refunding payment");
+});
+
+test("a payment that already funded a sale is not refundable", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-outcome-b");
+  const paymentId = "pi-outcome-sale-first";
+  const sale = await finalize({
+    domain: "rpc-outcome-b.com", buyerUserId: userId, buyerHandle: "rpc-outcome-b",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: paymentId,
+  });
+  assert.ok(sale.ok);
+
+  const claim = await client.query(
+    "select * from public.claim_refund_attempt($1,$2,$3,$4,$5,$6,$7)",
+    ["dodo", paymentId, "evt-outcome-b", "stale_quote", 500, 3, 600],
+  );
+  assert.equal(claim.rows[0].claimed, false);
+  assert.equal(claim.rows[0].status, "already_finalized");
+  assert.match(String(claim.rows[0].last_error), /sale_exists/);
+  const refunds = await client.query("select count(*)::int n from public.refunds where provider_payment_id = $1", [paymentId]);
+  assert.equal(refunds.rows[0].n, 0, "no refund ledger row is created for a finalized payment");
+});
+
+// Forced interleavings over the per-payment advisory lock. Firing parallel
+// requests does not reliably hit the window, so the winner's transaction is
+// held open while the loser parks on the advisory lock.
+test("refund-first interleaving: a blocked finalize sees the refund and refuses", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-outcome-c");
+  const domain = "rpc-outcome-c.com";
+  const paymentId = "pi-outcome-c";
+  const winner = await client.connect();
+  const loser = await client.connect();
+  try {
+    await winner.query("begin");
+    await winner.query("select * from public.claim_refund_attempt($1,$2,$3,$4,$5,$6,$7)", [
+      "dodo", paymentId, "evt-outcome-c", "stale_quote", 500, 3, 600,
+    ]);
+
+    await loser.query("begin");
+    let resolved = false;
+    const pending: Promise<string> = loser
+      .query("select * from public.finalize_takeover($1,$2,$3,$4,$5,$6)", [
+        domain, userId, "rpc-outcome-c", 0, 500, paymentId,
+      ])
+      .then(
+        () => {
+          resolved = true;
+          return "OK";
+        },
+        (e: unknown) => {
+          resolved = true;
+          return String(e instanceof Error ? e.message : e).split(" ")[0].replace(/["']/g, "");
+        },
+      );
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(resolved, false, "finalize must still be blocked on the payment advisory lock");
+    await winner.query("commit");
+    const code = await pending;
+    await loser.query("commit").catch(() => {});
+    assert.equal(code, "PAYMENT_REFUNDING");
+  } finally {
+    winner.release();
+    loser.release();
+  }
+});
+
+test("sale-first interleaving: a blocked refund claim sees the sale and refuses", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-outcome-d");
+  const domain = "rpc-outcome-d.com";
+  const paymentId = "pi-outcome-d";
+  const winner = await client.connect();
+  const loser = await client.connect();
+  try {
+    await winner.query("begin");
+    await winner.query("select * from public.finalize_takeover($1,$2,$3,$4,$5,$6)", [
+      domain, userId, "rpc-outcome-d", 0, 500, paymentId,
+    ]);
+
+    await loser.query("begin");
+    let resolved = false;
+    const pending: Promise<string> = loser
+      .query("select * from public.claim_refund_attempt($1,$2,$3,$4,$5,$6,$7)", [
+        "dodo", paymentId, "evt-outcome-d", "stale_quote", 500, 3, 600,
+      ])
+      .then(
+        (r) => {
+          resolved = true;
+          return String(r.rows[0].status);
+        },
+        (e: unknown) => {
+          resolved = true;
+          return `ERROR:${String(e instanceof Error ? e.message : e).split(" ")[0]}`;
+        },
+      );
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(resolved, false, "claim_refund_attempt must still be blocked on the advisory lock");
+    await winner.query("commit");
+    const status = await pending;
+    await loser.query("commit").catch(() => {});
+    assert.equal(status, "already_finalized");
+  } finally {
+    winner.release();
+    loser.release();
+  }
+});
+
+test("reconcile_refund_event inserts without a claim, sets the event id, and never downgrades", { skip: !hasDocker }, async () => {
+  // Insert path. The function returns (status, sale_exists).
+  const inserted = await client.query(
+    "select * from public.reconcile_refund_event($1,$2,$3,$4,$5,$6)",
+    ["dodo", "pi-recon-rpc-new", "evt-recon-rpc-new", "succeeded", 590, null],
+  );
+  assert.equal(inserted.rows[0].status, "succeeded");
+  assert.equal(inserted.rows[0].sale_exists, false);
+  const row = await client.query(
+    "select status, provider_event_id, amount_cents from public.refunds where provider = 'dodo' and provider_payment_id = 'pi-recon-rpc-new'",
+  );
+  assert.equal(row.rows[0].status, "succeeded");
+  assert.equal(row.rows[0].provider_event_id, "evt-recon-rpc-new");
+  assert.equal(Number(row.rows[0].amount_cents), 590);
+
+  // A later failure event must not downgrade the settled refund.
+  const late = await client.query(
+    "select * from public.reconcile_refund_event($1,$2,$3,$4,$5,$6)",
+    ["dodo", "pi-recon-rpc-new", "evt-recon-rpc-late", "manual_review", null, "late failure"],
+  );
+  assert.equal(late.rows[0].status, "succeeded");
+  const after = await client.query(
+    "select status from public.refunds where provider = 'dodo' and provider_payment_id = 'pi-recon-rpc-new'",
+  );
+  assert.equal(after.rows[0].status, "succeeded", "settled refunds stay settled");
+
+  // A manual_review row can be upgraded by a later success.
+  await client.query(
+    `insert into public.refunds (provider, provider_payment_id, provider_event_id, reason, status, attempts)
+     values ('dodo', 'pi-recon-rpc-up', 'evt-up-1', 'stale_quote', 'manual_review', 1)`,
+  );
+  const upgraded = await client.query(
+    "select * from public.reconcile_refund_event($1,$2,$3,$4,$5,$6)",
+    ["dodo", "pi-recon-rpc-up", "evt-up-2", "succeeded", 590, null],
+  );
+  assert.equal(upgraded.rows[0].status, "succeeded");
+  const upRow = await client.query(
+    "select provider_event_id, amount_cents from public.refunds where provider = 'dodo' and provider_payment_id = 'pi-recon-rpc-up'",
+  );
+  assert.equal(upRow.rows[0].provider_event_id, "evt-up-2", "the event id is rewritten");
+  assert.equal(Number(upRow.rows[0].amount_cents), 590);
+});
+
+test("reconcile_refund_event reports a sale under the same lock and never hides the contradiction", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-recon-sale");
+  const paymentId = "pi-recon-sale";
+  const sale = await finalize({
+    domain: "rpc-recon-sale.com", buyerUserId: userId, buyerHandle: "rpc-recon-sale",
+    expectedVersion: 0, paidCents: 500, providerPaymentId: paymentId,
+  });
+  assert.ok(sale.ok);
+
+  const reconciled = await client.query(
+    "select * from public.reconcile_refund_event($1,$2,$3,$4,$5,$6)",
+    ["dodo", paymentId, "evt-recon-sale", "succeeded", 500, null],
+  );
+  assert.equal(reconciled.rows[0].sale_exists, true, "the contradiction is detectable atomically");
+  const refunds = await client.query("select count(*)::int n from public.refunds where provider_payment_id = $1", [paymentId]);
+  assert.equal(refunds.rows[0].n, 1, "the provider event is recorded, never dropped");
+});
+
+// Forced interleaving: a finalize holding the payment lock while reconcile
+// waits must see the committed sale in its verdict (the route used to do the
+// sale lookup before reconcile, which missed exactly this window).
+test("reconcile sees a sale committed while it waited on the payment lock", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-recon-race");
+  const paymentId = "pi-recon-race";
+  const winner = await client.connect();
+  const loser = await client.connect();
+  try {
+    await winner.query("begin");
+    await winner.query("select * from public.finalize_takeover($1,$2,$3,$4,$5,$6)", [
+      "rpc-recon-race.com", userId, "rpc-recon-race", 0, 500, paymentId,
+    ]);
+
+    await loser.query("begin");
+    let resolved = false;
+    const pending: Promise<boolean> = loser
+      .query("select * from public.reconcile_refund_event($1,$2,$3,$4,$5,$6)", [
+        "dodo", paymentId, "evt-recon-race", "succeeded", 500, null,
+      ])
+      .then(
+        (r) => {
+          resolved = true;
+          return r.rows[0].sale_exists === true;
+        },
+        () => {
+          resolved = true;
+          return false;
+        },
+      );
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(resolved, false, "reconcile must still be blocked on the payment advisory lock");
+    await winner.query("commit");
+    const saleExists = await pending;
+    await loser.query("commit").catch(() => {});
+    assert.equal(saleExists, true, "the verdict must see the sale committed while parked");
+  } finally {
+    winner.release();
+    loser.release();
+  }
+});
+
+// A definitively FAILED refund (provider answered, nothing moved) must not
+// park the payment forever: a later correct success event may finalize. Live
+// intents (attempting/succeeded/manual_review) still block.
+test("finalize is blocked by live refund intents but not by a definitively failed refund", { skip: !hasDocker }, async () => {
+  const statuses: Array<{ status: string; domain: string; blocked: boolean }> = [
+    { status: "attempting", domain: "rpc-live-attempting.com", blocked: true },
+    { status: "manual_review", domain: "rpc-live-manual.com", blocked: true },
+    { status: "succeeded", domain: "rpc-live-succeeded.com", blocked: true },
+    { status: "failed", domain: "rpc-live-failed.com", blocked: false },
+  ];
+  for (const [i, c] of statuses.entries()) {
+    const userId = await seedProfile(`rpc-live-${i}`);
+    const paymentId = `pi-live-${i}`;
+    await client.query(
+      `insert into public.refunds (provider, provider_payment_id, provider_event_id, reason, status, attempts)
+       values ('dodo', $1, $2, 'stale_quote', $3, 1)`,
+      [paymentId, `evt-live-${i}`, c.status],
+    );
+    const out = await finalize({
+      domain: c.domain, buyerUserId: userId, buyerHandle: `rpc-live-${i}`,
+      expectedVersion: 0, paidCents: 500, providerPaymentId: paymentId,
+    });
+    if (c.blocked) {
+      assert.ok(!out.ok, `${c.status} must block finalize`);
+      assert.equal(out.code, "PAYMENT_REFUNDING", `${c.status} blocks with PAYMENT_REFUNDING`);
+    } else {
+      assert.ok(out.ok, `${c.status} must not block finalize`);
+      assert.equal(Number(out.sale.price_cents), 500);
+    }
   }
 });

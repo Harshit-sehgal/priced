@@ -271,18 +271,24 @@ test("pulse: responses are cacheable instead of no-store", async () => {
   assert.ok(!cc.includes("no-store"), `expected the 200 not to be no-store, got "${cc}"`);
 });
 
-test("pulse: Realtime deployments short-circuit with zero database work", async () => {
+test("pulse: a configured deployment still answers a real fingerprint for clients that poll", async () => {
   const previousUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const previousKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   try {
-    // realtime-browser.ts only polls when these are absent, so a configured
-    // deployment can answer a constant fingerprint without touching Supabase
-    // and without spending a limiter round-trip.
+    // The client picks Realtime-vs-polling from NEXT_PUBLIC_* inlined at BUILD
+    // time while this route reads the server's RUNTIME env. When a build has no
+    // inlined public env (Cloudflare Workers/OpenNext is exactly this shape),
+    // the client polls a server that used to answer the constant "realtime":
+    // the poller's lastVersion then never changes and live updates silently
+    // stop. A polling client must always get a real composite fingerprint.
+    delete (globalThis as { __pricedPulse?: unknown }).__pricedPulse;
     const res = (await pulseGET(pulseRequest("10.1.0.1"))) as Response;
     assert.equal(res.status, 200);
-    assert.deepEqual(await res.json(), { v: "realtime" });
+    const body = (await res.json()) as { v?: string };
+    assert.notEqual(body.v, "realtime", "the frozen constant must never be returned");
+    assert.match(body.v ?? "", /\|/, "expected the composite fingerprint format");
   } finally {
     if (previousUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
     else process.env.NEXT_PUBLIC_SUPABASE_URL = previousUrl;

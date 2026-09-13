@@ -19,6 +19,15 @@ export type RefundResult = {
   status?: RefundProviderStatus;
   refundId?: string;
   error?: string;
+  /**
+   * True when the provider's disposition is UNKNOWN: the request may have been
+   * executed before a timeout/network failure, or the response body was
+   * unreadable. Callers must NOT retry automatically — the refund ledger parks
+   * it for manual reconciliation. This matters on providers without a
+   * documented request idempotency key (Dodo), where a retry after a
+   * timeout-after-success would refund twice.
+   */
+  indeterminate?: boolean;
 };
 
 export type WebhookVerification = { ok: true; event: ProviderEvent } | { ok: false; reason: string };
@@ -119,6 +128,28 @@ export type WebhookVerifyHeaders = {
   webhookTimestamp?: string | null;
 };
 
+export type RefundRequest = {
+  paymentId: string;
+  reason: string;
+  /** Idempotency scope: one logical refund intent maps to one provider key. */
+  idempotencyKey: string;
+};
+
+/**
+ * The deterministic idempotency key for one payment's refund intent.
+ *
+ * WHY deterministic and per-payment: the refund ledger mints a fresh claim
+ * token on every granted attempt, so keying on the token defeats idempotency
+ * across retries — a timeout-after-success followed by a retry would mint a
+ * fresh provider key and double-refund. Per Dodo's contract ("one key per
+ * logical intent, reused across retries"), every attempt for one payment
+ * shares this key and converges at the provider. Exported so the invariant is
+ * unit-tested instead of living as an inline template literal.
+ */
+export function refundIdempotencyKey(provider: string, paymentId: string): string {
+  return `${provider}:${paymentId}`;
+}
+
 export interface PaymentProvider {
   readonly name: string;
   createCheckout(args: {
@@ -129,9 +160,11 @@ export interface PaymentProvider {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
+    /** Idempotency scope: retries for the same quote reuse one provider session. */
+    idempotencyKey: string;
   }): Promise<CheckoutResult>;
   verifyWebhook(payload: string, signature: string | null, headers?: WebhookVerifyHeaders): WebhookVerification;
-  refundPayment(paymentId: string, reason: string): Promise<RefundResult>;
+  refundPayment(request: RefundRequest): Promise<RefundResult>;
 }
 
 export class ProviderNotConfiguredError extends Error {
@@ -224,14 +257,14 @@ class DemoProvider implements PaymentProvider {
 type StripeLike = {
   checkout: {
     sessions: {
-      create(args: Record<string, unknown>): Promise<{ id: string; url: string | null }>;
+      create(args: Record<string, unknown>, opts?: Record<string, unknown>): Promise<{ id: string; url: string | null }>;
     };
   };
   paymentIntents: {
     get(id: string): Promise<{ id: string; status: string; amount: number; metadata: Record<string, string> }>;
     refund?: never;
   };
-  refunds: { create(args: { payment_intent: string; reason?: string }): Promise<{ id: string }> };
+  refunds: { create(args: { payment_intent: string; reason?: string }, opts?: Record<string, unknown>): Promise<{ id: string }> };
   webhooks: { constructEvent(payload: string, sig: string, secret: string): { id: string; type: string; data: { object: Record<string, unknown> } } };
 };
 
@@ -251,10 +284,12 @@ class StripeProvider implements PaymentProvider {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
+    idempotencyKey: string;
   }): Promise<CheckoutResult> {
     const stripe = await loadStripe();
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
+    const session = await stripe.checkout.sessions.create(
+      {
+        mode: "payment",
       line_items: [
         {
           quantity: 1,
@@ -281,7 +316,11 @@ class StripeProvider implements PaymentProvider {
       payment_intent_data: { metadata: { quote_id: args.quoteId, amount_cents: String(args.amountCents) } },
       success_url: args.successUrl,
       cancel_url: args.cancelUrl,
-    });
+      },
+      // One quote maps to one provider session: a timed-out create that the
+      // client retries must not mint a second payable session.
+      { idempotencyKey: `checkout:${args.idempotencyKey}` },
+    );
     return { checkoutUrl: session.url, providerPaymentId: session.id, mode: "charge" };
   }
 
@@ -292,10 +331,14 @@ class StripeProvider implements PaymentProvider {
     return verifyStripeWebhookSync(payload, signature, secret);
   }
 
-  async refundPayment(paymentId: string): Promise<RefundResult> {
+  async refundPayment(request: RefundRequest): Promise<RefundResult> {
     try {
       const stripe = await loadStripe();
-      await stripe.refunds.create({ payment_intent: paymentId, reason: "requested_by_customer" });
+      await stripe.refunds.create(
+        { payment_intent: request.paymentId, reason: "requested_by_customer" },
+        // A timeout-after-success at the provider must not double-refund on retry.
+        { idempotencyKey: `refund:${request.idempotencyKey}` },
+      );
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -304,6 +347,21 @@ class StripeProvider implements PaymentProvider {
 }
 
 function verifyStripeWebhookSync(payload: string, signature: string, secret: string): WebhookVerification {
+  return verifyStripeWebhookInternal(payload, signature, secret, true);
+}
+
+/**
+ * Shared Stripe verifier. enforceFreshness=false is ONLY for the
+ * stale-but-signed path: the caller already proved the HMAC over the
+ * timestamped content, and only the age gate is being waived so a delayed
+ * but paid delivery flows through the money pipeline instead of a 400 drop.
+ */
+function verifyStripeWebhookInternal(
+  payload: string,
+  signature: string,
+  secret: string,
+  enforceFreshness: boolean,
+): WebhookVerification {
   // Stripe sends "t=<unix>,v1=<hex>"; verify HMAC of "t.payload".
   // Parsed defensively: a malformed header must produce a rejection, never a
   // throw, because a throw here would surface as a 500 and ask the provider to
@@ -320,7 +378,8 @@ function verifyStripeWebhookSync(payload: string, signature: string, secret: str
   }
   if (!timestamp || !v1) return { ok: false, reason: "malformed_signature" };
   const age = Math.abs(Date.now() / 1000 - Number(timestamp));
-  if (!Number.isFinite(age) || age > 60 * 10) return { ok: false, reason: "stale_timestamp" };
+  if (!Number.isFinite(age)) return { ok: false, reason: "malformed_signature" };
+  if (enforceFreshness && age > 60 * 10) return { ok: false, reason: "stale_timestamp" };
   const expected = createHmac("sha256", secret).update(`${timestamp}.${payload}`).digest("hex");
   if (!timingSafeEqualStrings(v1, expected)) return { ok: false, reason: "invalid_signature" };
 
@@ -379,7 +438,10 @@ function verifyStripeWebhookSync(payload: string, signature: string, secret: str
       "";
     if (!paymentId) return { ok: false, reason: "missing_payment_id" };
 
-    // Amount: metadata is authoritative for our quotes; Stripe's totals are fallback.
+    // Amount: the provider-charged total is authoritative for our quotes.
+    // Echoed metadata is only a fallback for event variants that omit the
+    // provider amount; trusting metadata first would hide a wrong-amount
+    // payment (e.g. tax/fees changing the charged total).
     const metaCents = obj.metadata?.amount_cents ? Number(obj.metadata.amount_cents) : null;
     const stripeAmount =
       typeof obj.amount_total === "number"
@@ -387,7 +449,12 @@ function verifyStripeWebhookSync(payload: string, signature: string, secret: str
         : typeof obj.amount === "number"
           ? obj.amount
           : null;
-    const amountCents = Number.isFinite(metaCents) && (metaCents as number) > 0 ? (metaCents as number) : stripeAmount;
+    const amountCents =
+      typeof stripeAmount === "number" && Number.isFinite(stripeAmount)
+        ? stripeAmount
+        : Number.isFinite(metaCents) && (metaCents as number) > 0
+          ? (metaCents as number)
+          : null;
 
     // Stripe reports currency lowercase ("usd"); normalize before comparing.
     const currency = normalizeCurrency(obj.currency);
@@ -464,15 +531,23 @@ export class DodoPaymentsProvider implements PaymentProvider {
     amountCents: number;
     successUrl: string;
     cancelUrl: string;
+    idempotencyKey: string;
   }): Promise<CheckoutResult> {
     // Dodo uses a single return_url for success/failure/cancel and appends
     // ?payment_id=&status= — the webhook (never the redirect) finalizes.
+    // Idempotency-Key keeps a timed-out create from minting a second payable
+    // session on client retry (Dodo honors the standard header).
+    // Timeout is load-bearing: without it a hung socket holds the checkout
+    // route until the platform kills it, and the caller cannot distinguish
+    // "never created" from "created but unacknowledged".
     const res = await fetch(`${this.baseUrl}/checkouts`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
+        "Idempotency-Key": `checkout:${args.idempotencyKey}`,
       },
+      signal: AbortSignal.timeout(15_000),
       body: JSON.stringify({
         product_cart: [{ product_id: this.productId, quantity: 1, amount: args.amountCents }],
         // Dodo may have no region-specific methods available in a test
@@ -508,35 +583,65 @@ export class DodoPaymentsProvider implements PaymentProvider {
     return verifyDodoWebhookSync(payload, signature, headers?.webhookId ?? null, headers?.webhookTimestamp ?? null, secret);
   }
 
-  async refundPayment(paymentId: string, reason: string): Promise<RefundResult> {
+  async refundPayment(request: RefundRequest): Promise<RefundResult> {
+    // Timeout is load-bearing here too: an abort is INDETERMINATE (the
+    // provider may have executed), so the caller must keep the ledger
+    // lease / manual-review path, never treat it as a clean "not done".
+    //
+    // Dodo does not document an `Idempotency-Key` request header for
+    // POST /refunds (unlike the webhook contract), so an automatic retry
+    // after a timeout could refund twice. Every outcome where the request may
+    // have been executed is returned with `indeterminate: true`, which the
+    // ledger turns into a terminal manual-review — never a retry.
+    let res: Response;
     try {
-      const res = await fetch(`${this.baseUrl}/refunds`, {
+      res = await fetch(`${this.baseUrl}/refunds`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({ payment_id: paymentId, reason: reason.slice(0, 500) }),
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify({ payment_id: request.paymentId, reason: request.reason.slice(0, 500) }),
       });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        return { ok: false, error: `dodo refund http ${res.status}: ${detail.slice(0, 300)}` };
-      }
-      const body = (await res.json().catch(() => null)) as {
-        status?: unknown;
-        refund_id?: unknown;
-      } | null;
-      const status = body?.status;
-      const refundId = typeof body?.refund_id === "string" ? body.refund_id : undefined;
-      if (status === "succeeded") return { ok: true, status, refundId };
-      if (status === "pending" || status === "review" || status === "failed") {
-        return { ok: false, status, refundId, error: `dodo refund status: ${status}` };
-      }
-      return { ok: false, error: "dodo refund response missing a recognized status" };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      return { ok: false, indeterminate: true, error: e instanceof Error ? e.message : String(e) };
     }
+    if (!res.ok) {
+      // The provider answered with an error status: nothing was refunded.
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `dodo refund http ${res.status}: ${detail.slice(0, 300)}` };
+    }
+    let body: { status?: unknown; refund_id?: unknown } | null = null;
+    try {
+      body = (await res.json()) as { status?: unknown; refund_id?: unknown };
+    } catch {
+      body = null;
+    }
+    const status = body?.status;
+    const refundId = typeof body?.refund_id === "string" ? body.refund_id : undefined;
+    if (status === "succeeded") return { ok: true, status, refundId };
+    if (status === "pending" || status === "review" || status === "failed") {
+      return { ok: false, status, refundId, error: `dodo refund status: ${status}` };
+    }
+    // HTTP 200 with an unrecognized body: the refund may well have been
+    // accepted, so treat it as indeterminate rather than retryable.
+    return { ok: false, indeterminate: true, error: "dodo refund response missing a recognized status" };
   }
+}
+
+/**
+ * Parse a Dodo dispute amount for the reconciliation record only. Dodo sends
+ * these as decimal strings (unlike payment minor units), so accept numeric
+ * strings and round half-up to the nearest minor unit. Never funds anything.
+ */
+function parseDisputeAmountCents(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value.trim());
+    if (Number.isFinite(n)) return Math.round(n);
+  }
+  return null;
 }
 
 function dodoWebhookKeyBytes(secret: string): Buffer {
@@ -561,13 +666,30 @@ function verifyDodoWebhookSync(
   webhookTimestamp: string | null,
   secret: string,
 ): WebhookVerification {
+  return verifyDodoWebhookInternal(payload, signature, webhookId, webhookTimestamp, secret, true);
+}
+
+/**
+ * Shared Dodo verifier. enforceFreshness=false is ONLY for the
+ * stale-but-signed path: the caller already proved the HMAC over the
+ * timestamped content, and only the age gate is being waived so a delayed
+ * but paid delivery flows through the money pipeline instead of a 400 drop.
+ */
+function verifyDodoWebhookInternal(
+  payload: string,
+  signature: string | null,
+  webhookId: string | null,
+  webhookTimestamp: string | null,
+  secret: string,
+  enforceFreshness: boolean,
+): WebhookVerification {
   if (!signature) return { ok: false, reason: "missing_signature" };
   if (!webhookId) return { ok: false, reason: "missing_webhook_id" };
   if (!webhookTimestamp) return { ok: false, reason: "missing_webhook_timestamp" };
   const ts = Number(webhookTimestamp);
   if (!Number.isFinite(ts)) return { ok: false, reason: "malformed_timestamp" };
   const ageSec = Math.abs(Date.now() / 1000 - ts);
-  if (ageSec > 60 * 10) return { ok: false, reason: "stale_timestamp" };
+  if (enforceFreshness && ageSec > 60 * 10) return { ok: false, reason: "stale_timestamp" };
 
   // Standard Webhooks: one or more space/comma-separated "v1,<base64>" entries.
   const candidates = signature
@@ -630,7 +752,13 @@ function verifyDodoWebhookSync(
     // payment.failed may arrive without a payment object in edge cases;
     // failed/other events are observability-only, so allow empty payment id.
     // Succeeded events must carry one — otherwise finalization is impossible.
-    if (!paymentId && (status === "succeeded" || isRefund)) return { ok: false, reason: "missing_payment_id" };
+    // Disputes must too: provider_payment_id is the ONLY key joining a dispute
+    // back to its sale and payment_events row, and "" satisfies the not-null
+    // constraint while being unjoinable — a chargeback recorded in a way that
+    // cannot be traced to what it reverses is barely better than none.
+    if (!paymentId && (status === "succeeded" || status === "disputed" || isRefund)) {
+      return { ok: false, reason: "missing_payment_id" };
+    }
 
     const meta = (data.metadata ?? {}) as Record<string, unknown>;
     const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
@@ -665,7 +793,7 @@ function verifyDodoWebhookSync(
               // Dodo sends dispute amounts as decimal strings, unlike payment
               // minor units, so parse permissively for the record only. This
               // value never funds or reverses anything.
-              amountCents: typeof data.amount === "number" ? data.amount : null,
+              amountCents: parseDisputeAmountCents(data.amount),
               currency,
             }
           : null,
@@ -811,8 +939,95 @@ export function getPaymentProvider(): PaymentProvider {
   return new DemoProvider();
 }
 
+/**
+ * Resolve the provider implementation that owns a given payment event.
+ * Refund execution MUST use this, never getPaymentProvider(): a provider
+ * switch (Dodo<->Stripe, test<->live key rotation) between payment and
+ * refund would otherwise send a payment id to the wrong provider, where it
+ * fails, burns a ledger attempt, and parks the payment in manual_review
+ * even though the owning provider would have refunded it.
+ */
+export function getProviderForEvent(providerName: string): PaymentProvider {
+  if (providerName === "dodo") {
+    if (!process.env.DODO_PAYMENTS_API_KEY) throw new ProviderNotConfiguredError("dodo");
+    return new DodoPaymentsProvider();
+  }
+  if (providerName === "stripe") {
+    if (!process.env.STRIPE_SECRET_KEY) throw new ProviderNotConfiguredError("stripe");
+    return new StripeProvider();
+  }
+  if (providerName === "demo") return new DemoProvider();
+  throw new Error(`UNKNOWN_PAYMENT_PROVIDER: ${providerName}`);
+}
+
 export function getConfiguredProviderName(): "dodo" | "stripe" | "demo" {
   if (process.env.DODO_PAYMENTS_API_KEY) return "dodo";
   if (process.env.STRIPE_SECRET_KEY) return "stripe";
   return "demo";
+}
+
+/**
+ * True when the configured payment provider and the configured datastore
+ * agree. A real provider requires the production datastore; the demo provider
+ * must never run against it. When they disagree the deployment is
+ * misconfigured, and getPaymentProvider() would throw a 500 — callers check
+ * this first so the failure is a clean 503 with no provider call attempted.
+ */
+export function isPaymentConfigConsistent(): boolean {
+  return (getConfiguredProviderName() !== "demo") === isProdDatastore;
+}
+
+/**
+ * Re-verify a stale-but-signed delivery with the age gate waived.
+ * The caller MUST have already proven the HMAC: this replays the SAME
+ * signature verification with enforceFreshness=false, so a forged payload
+ * still fails invalid_signature here. Only the provider that owns the
+ * delivery is consulted (signature scheme + secret differ per provider).
+ */
+export function parseStaleWebhookEvent(
+  providerName: string,
+  payload: string,
+  signature: string | null,
+  headers: WebhookVerifyHeaders,
+): WebhookVerification {
+  if (providerName === "dodo") {
+    const secret = process.env.DODO_PAYMENTS_WEBHOOK_KEY;
+    if (!secret) return { ok: false, reason: "webhook_secret_missing" };
+    const first = verifyDodoWebhookInternal(
+      payload,
+      signature,
+      headers?.webhookId ?? null,
+      headers?.webhookTimestamp ?? null,
+      secret,
+      true,
+    );
+    // CAREFUL: `stale_timestamp` does NOT mean the HMAC matched. The freshness
+    // check runs BEFORE the digest is computed, so this first pass returns
+    // "stale" having proved nothing about the signature. It is only a cheap
+    // pre-filter that tells us which reason to waive.
+    //
+    // The signature is proved by the SECOND call below, which recomputes the
+    // full HMAC with freshness disabled. That re-verification is the entire
+    // security of this path — never "optimise" it away by trusting
+    // `first.reason`, and never return `ok` derived from this first pass.
+    // Any other reason (including invalid_signature) is returned unchanged.
+    if (first.ok || first.reason !== "stale_timestamp") return first;
+    return verifyDodoWebhookInternal(
+      payload,
+      signature,
+      headers?.webhookId ?? null,
+      headers?.webhookTimestamp ?? null,
+      secret,
+      false,
+    );
+  }
+  if (providerName === "stripe") {
+    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!secret) return { ok: false, reason: "webhook_secret_missing" };
+    if (!signature) return { ok: false, reason: "missing_signature" };
+    const first = verifyStripeWebhookInternal(payload, signature, secret, true);
+    if (first.ok || first.reason !== "stale_timestamp") return first;
+    return verifyStripeWebhookInternal(payload, signature, secret, false);
+  }
+  return { ok: false, reason: "stale_timestamp_unsupported_provider" };
 }

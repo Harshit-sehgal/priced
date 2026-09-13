@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { createQuote } from "@/lib/repo";
 import { getViewer, demoViewer } from "@/lib/auth";
-import { rateLimit } from "@/lib/ratelimit";
+import { rateLimitAll } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
+import { clientIp } from "@/lib/client-ip";
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
 
   // JSON-only: cross-origin form posts cannot produce this content type (§46 CSRF).
   const contentType = req.headers.get("content-type") ?? "";
@@ -27,15 +28,25 @@ export async function POST(req: Request) {
 
   if (!user) return NextResponse.json({ error: "login_required" }, { status: 401 });
 
-  const rlUser = await rateLimit(`quote:${user.id}`, 30, 60_000);
-  const rlIp = await rateLimit(`quote:ip:${ip}`, 60, 60_000);
-  if (!rlUser || !rlIp) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+  // Identity dimensions: both were already awaited unconditionally, so one
+  // round-trip here is behaviour-identical.
+  const allowedIdentity = await rateLimitAll([
+    { key: `quote:${user.id}`, limit: 30, windowMs: 60_000 },
+    { key: `quote:ip:${ip}`, limit: 60, windowMs: 60_000 },
+  ]);
+  if (!allowedIdentity) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
   let domain: string | undefined;
   try {
     const raw = await req.text();
     if (raw.length > 4_096) return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
-    const body = JSON.parse(raw || "{}") as { domain?: string };
+    const body = JSON.parse(raw || "{}") as { domain?: unknown };
+    // Type-check BEFORE normalizeDomain: a non-string shape (number/object)
+    // used to throw `input.trim is not a function` outside the error mapping,
+    // surfacing as an unauthenticated 500 instead of a 400.
+    if (typeof body.domain !== "string") {
+      return NextResponse.json({ error: "domain_required" }, { status: 400 });
+    }
     domain = body.domain;
   } catch {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
@@ -46,9 +57,14 @@ export async function POST(req: Request) {
   const { normalizeDomain } = await import("@/lib/game.ts");
   const normalizedDomain = normalizeDomain(domain);
   if (normalizedDomain) {
-    const rlDomain = await rateLimit(`quote:domain:${normalizedDomain}`, 30, 60_000);
-    const rlUserDomain = await rateLimit(`quote:user-domain:${user.id}:${normalizedDomain}`, 8, 60_000);
-    if (!rlDomain || !rlUserDomain) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+    // A second batch, not merged with the identity one above: these keys need
+    // the normalised domain, which is only known after the body is parsed.
+    // Four sequential round-trips become two.
+    const allowedDomain = await rateLimitAll([
+      { key: `quote:domain:${normalizedDomain}`, limit: 30, windowMs: 60_000 },
+      { key: `quote:user-domain:${user.id}:${normalizedDomain}`, limit: 8, windowMs: 60_000 },
+    ]);
+    if (!allowedDomain) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
   }
 
   try {

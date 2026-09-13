@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getProfileByHandle } from "@/lib/repo";
 import { isHandleValid } from "@/lib/domains.ts";
 import { getHolderAnalytics } from "@/lib/holder-analytics";
+import { safeDecodeURIComponent } from "@/lib/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 
 export default async function HolderAnalyticsPage({ params }: Params) {
   const { handle } = await params;
-  const h = decodeURIComponent(handle).toLowerCase().replace(/^@/, "");
+  const h = safeDecodeURIComponent(handle).toLowerCase().replace(/^@/, "");
   if (!isHandleValid(h)) {
     return (
       <div className="stack">
@@ -95,10 +96,11 @@ export default async function HolderAnalyticsPage({ params }: Params) {
                 <dt>Tag views</dt>
                 <dd className="money">{analytics.tagViews.toLocaleString()}</dd>
               </div>
-              <div className="stat-row">
-                <dt>Unique visitors (sessions)</dt>
-                <dd className="money">{analytics.tagViewSessions.toLocaleString()}</dd>
-              </div>
+              {/* "Unique visitors (sessions)" is deliberately NOT shown: server
+                  -rendered tag_viewed rows carry no session id (the client
+                  sessionStorage id is only attached to client beacons), so the
+                  RPC's distinct-session count is structurally 0. Do not restore
+                  the row without a session source for view events. */}
               <div className="stat-row">
                 <dt>Profile views</dt>
                 <dd className="money">{analytics.profileViews.toLocaleString()}</dd>
@@ -116,15 +118,13 @@ export default async function HolderAnalyticsPage({ params }: Params) {
 
           {analytics.byDomain.length > 0 ? (
             <section className="section-rule stack">
-              <h2 className="display display-section">Traffic by tag</h2>
+              <h2 className="display display-section">Traffic by tag (top 10)</h2>
               <ul className="holding-list">
                 {analytics.byDomain.map((d) => (
                   <li key={d.domain} className="row-split">
                     <Link href={`/domain/${d.domain}`} className="mono">{d.domain}</Link>
                     <span className="small">
                       <span className="money">{d.tagViews.toLocaleString()}</span> views
-                      {" · "}
-                      <span className="money">{d.uniqueSessions.toLocaleString()}</span> unique
                     </span>
                   </li>
                 ))}
