@@ -428,3 +428,10 @@ Use focused PRs and keep required GitHub CI green.
 ## Completion definition
 
 This phase is complete only when a real hosted beta environment successfully exercises Supabase, Auth, Dodo Test Mode, signed webhooks, Redis rate limits, Realtime, analytics, and concurrency end to end with no unexplained payment state.
+
+## Latest operational verification — 2026-09-13
+
+- The hardening and release-gate changes were merged to `main` in PR #58 (merge commit `902ec064`); required CI passed, including the Cloudflare artifact build, 35 real-Postgres tests, schema equivalence, and the live HTTP race test.
+- The active Cloudflare beta was redeployed as Worker version `72efd8da-c2a5-47a8-907b-c670a8976f10`. Liveness, Supabase, Redis, and the 10-check staging smoke all passed after deployment.
+- Analytics retention is now **Staging verified**: GitHub repository secrets are configured, the workflow is on `main`, and run `34771269757` completed successfully against the hosted project with zero expired rows to delete.
+- Dodo Test Mode remains **External provider blocked** for the outstanding hosted 25-way payment race. The Test Mode Account Statement currently shows `$5.76`; no further refund-heavy race was started against that balance.
