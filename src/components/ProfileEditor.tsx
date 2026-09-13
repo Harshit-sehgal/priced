@@ -48,7 +48,7 @@ export function ProfileEditor({
           cta_url_required: "Add the destination URL.",
           cta_url_invalid: "Use a full https:// URL.",
           cta_url_too_long: "URL is too long.",
-          host_reserved: "Point your CTA somewhere other than Priced.",
+          cta_host_reserved: "Point your CTA somewhere other than Priced.",
           bio_too_long: "Bio is too long. 280 characters max.",
         };
         // Route codes arrive upper-cased (CTA_URL_INVALID); map lower-cased.

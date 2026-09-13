@@ -172,6 +172,36 @@ value habit in this catalogue.
 For forcing concurrency interleavings and other verification mechanics, read
 `references/verification.md`.
 
+## 10. One logical payment, two outcomes
+
+Any system with both a "paid → grant" and a "cannot grant → refund" path has
+two writers for one payment id. If each checks only its own table, a payment
+can end up both granted and refunded — the customer keeps the product AND the
+money. This is not hypothetical here: a refund branch does not necessarily
+make the quote terminal, so a second event id for the same payment could still
+finalize after a refund succeeded (and a racing claim could refund a funded
+sale).
+
+The invariant needs ONE serialization point for the payment id (a transaction
+advisory lock or a unique outcome row), and each side must refuse when the
+other's outcome exists. "We look up a sale before refunding" is not that
+point: the lookup and the write are not atomic, and a forced interleaving
+walks straight through it. Regression-test BOTH interleavings — refund first
+and sale first — with the winner's transaction held open.
+
+## 11. Provider indeterminacy
+
+A timeout, an abort, or an unreadable success body does not mean "nothing
+happened" — it means "unknown". If the provider does not document request
+idempotency for that endpoint, retrying "unknown" can execute the operation
+twice. The safe disposition for an unknown outcome is terminal manual review,
+not a retry; retries are only safe when the provider definitively answered
+(an HTTP error status, or a recognized terminal status in the body).
+
+Real instance in this repo: Dodo documents no `Idempotency-Key` for
+`POST /refunds`, yet the ledger marked a timeout as `failed` (retryable). The
+fix classified unknown outcomes as `indeterminate` and parked them for review.
+
 ## Reporting
 
 Lead with what would actually happen to a real user's money, in one sentence,

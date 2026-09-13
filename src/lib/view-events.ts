@@ -96,11 +96,43 @@ function take(buckets: Map<string, LocalBucket>, key: string, limit: number, now
 export function withinLocalTelemetryBudget(dimension: string, ip = "unknown"): boolean {
   const now = Date.now();
   const buckets = localBuckets();
-  // Bound the map itself: an unbounded key space would be its own memory leak.
-  if (buckets.size > 5_000) buckets.clear();
+  evictTelemetryBuckets(buckets, now);
   // Per-client first: an over-budget client must not consume global allowance.
   if (!take(buckets, `${dimension}:${ip}`, TELEMETRY_LOCAL_LIMIT, now)) return false;
   return take(buckets, `${dimension}:__all__`, TELEMETRY_GLOBAL_LIMIT, now);
+}
+
+/** Maximum per-instance key count before eviction. See evictTelemetryBuckets. */
+export const MAX_LOCAL_TELEMETRY_BUCKETS = 5_000;
+
+/**
+ * Bound the per-client bucket map without handing a sustained flood a fresh
+ * global allowance.
+ *
+ * The old behaviour cleared the ENTIRE map on overflow, which reset the
+ * instance-wide counter too: a multi-window flood of distinct clients could
+ * buy another full global budget every time the map filled. Eviction now drops
+ * expired entries first, then the oldest per-client entries, and always keeps
+ * the global counter for the dimension being checked. Dropping a client's
+ * bucket can reset that client's allowance — the global tier is what bounds
+ * total spend, and it is never reset here.
+ */
+export function evictTelemetryBuckets(
+  buckets: Map<string, { count: number; resetAt: number }>,
+  now: number,
+): void {
+  if (buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS) return;
+  for (const [key, bucket] of buckets) {
+    if (bucket.resetAt <= now) buckets.delete(key);
+  }
+  if (buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS) return;
+  // Preserve EVERY dimension's instance-wide counter, not just the one being
+  // checked: evicting another dimension's `__all__` key would hand that
+  // dimension a fresh global allowance.
+  for (const key of buckets.keys()) {
+    if (buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS) break;
+    if (!key.endsWith(":__all__")) buckets.delete(key);
+  }
 }
 
 // `/api/analytics` limits. Analytics is high-volume by nature, so these are

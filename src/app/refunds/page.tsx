@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+// See src/app/login/page.tsx: the proxy reads cookies on every matched route,
+// and OpenNext 500s a prerendered page that goes dynamic at request time.
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Refund Policy" };
 
 export default function RefundsPage() {
@@ -32,6 +36,11 @@ export default function RefundsPage() {
           between your quote and your payment.
         </li>
         <li>
+          <strong>We reserve a tag you already hold.</strong> If the operator adds a tag you hold to
+          the blocklist to stop it being used to mislead people, the last payment for that tag is
+          refunded.
+        </li>
+        <li>
           <strong>Something broke on our side</strong> after the charge but before the takeover.
         </li>
       </ul>
@@ -45,7 +54,8 @@ export default function RefundsPage() {
         Once the tag is yours, the payment is final. It is <strong>not</strong> refundable because
         somebody later took the tag from you — that is the entire game, it was always going to
         happen, and it is stated everywhere on this site before you pay. You bought temporary holder
-        status and the duration was never guaranteed.
+        status and the duration was never guaranteed. The one exception is above: if the operator
+        reserves the tag for safety, the last payment is refunded.
       </p>
       <p className="small muted" style={{ margin: 0 }}>
         You also do not get a refund for regretting it, for the price rising, or for the tag turning

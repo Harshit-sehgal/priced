@@ -77,18 +77,27 @@ assert(price === 500, `first-claim price should be 500 cents, got ${price}`);
 const checkoutResponses = await Promise.all(
   quotes.map((q) => postWithRetry("/api/checkout", { quoteId: q.json.quoteId })),
 );
-const checkouts = checkoutResponses.filter((r) => r.status === 200 && r.json?.checkoutUrl);
+// Keep each checkout PAIRED with the quote it belongs to. Filtering first and
+// then indexing `quotes[i]` misaligned the two the moment one racer's checkout
+// failed: the webhook under test could reference a quote that was never
+// checked out, and the race could "pass" without exercising the intended pair.
+const checkouts = checkoutResponses
+  .map((res, i) => ({ res, quote: quotes[i] }))
+  .filter(({ res }) => res.status === 200 && res.json?.checkoutUrl);
 assert(checkouts.length > 0, "no racer opened a checkout");
 
 // --- everyone pays at the same instant (concurrent webhooks) ------------------
 const payments = await Promise.all(
-  checkouts.map(async (c, i) => {
+  checkouts.map(async ({ res: checkout, quote }, i) => {
+    const quoteId = quote.json.quoteId;
     const payload = JSON.stringify({
       id: `evt_race_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 8)}`,
       type: "payment_intent.succeeded",
-      payment_intent: `demo_pi_${quotes[i].json.quoteId}`,
+      // The provider payment id the checkout route actually stored — never a
+      // reconstructed guess.
+      payment_intent: checkout.json.providerPaymentId ?? `demo_pi_${quoteId}`,
       metadata: {
-        quote_id: quotes[i].json.quoteId,
+        quote_id: quoteId,
         domain,
         amount_cents: String(price),
       },
@@ -114,6 +123,18 @@ assert(processed.length === 1, `exactly one winner expected, got ${processed.len
 assert(
   other.length === 0,
   `unexpected outcomes present: ${other.map((o) => JSON.stringify(o.json)).join("; ") || "none"}`,
+);
+// A FAILED refund also returns outcome "failed" with reason stale_quote, but
+// with `refunded: false` and HTTP 500 (the task retries). It matched the
+// `stale` filter above, so without this assertion a loser whose money was
+// never returned still printed "no money lost" — exactly how the hosted
+// INSUFFICIENT_WALLET_FUNDS race could have looked green.
+const unrefunded = payments.filter(
+  (p) => p.json?.result?.outcome === "failed" && p.json?.result?.refunded !== true,
+);
+assert(
+  unrefunded.length === 0,
+  `losers whose refund did not complete: ${unrefunded.map((u) => JSON.stringify({ status: u.status, result: u.json?.result })).join("; ")}`,
 );
 const saleId = processed[0].json?.result?.saleId;
 assert(typeof saleId === "string" && saleId.length > 10, "winner produced no sale id");

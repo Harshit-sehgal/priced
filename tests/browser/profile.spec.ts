@@ -55,13 +55,14 @@ test.describe("holder profile", () => {
     ).toBeVisible();
   });
 
-  test("analytics page is private to the owner", async ({ page }) => {
-    // In demo mode every visitor IS the demo buyer (owner), so this asserts
-    // the page renders at all; the permission boundary is enforced in prod by
-    // the session check. Visit a handle that is NOT the demo buyer.
-    await page.goto("/u/ghost/analytics");
-    await expect(
-      page.getByText(/Not your analytics|No profile yet|That handle/),
-    ).toBeVisible();
+  test("analytics page is private to non-owners", async ({ page }) => {
+    // Load the homepage first so the demo market (and the seeded @indexfund
+    // profile) exists independently of test order. @indexfund's profile id is
+    // demo-indexfund, which is NOT the demo buyer (demo-user), so the owner
+    // gate must refuse — a real check, unlike the old nonexistent-handle case
+    // where every accepted string was an unrelated state.
+    await page.goto("/");
+    await page.goto("/u/indexfund/analytics");
+    await expect(page.getByText("Not your analytics.")).toBeVisible();
   });
 });

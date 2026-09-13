@@ -18,6 +18,7 @@ import {
   getProfileById,
   getProfileByHandle,
   updateProfileExtras,
+  listDomainsForHolder,
   seedDemoMarket,
   type RepoProfile,
 } from "../../src/lib/repo.ts";
@@ -223,5 +224,54 @@ test("filtering reserved rows does not under-fill a list", async () => {
     })),
   );
   assert.equal((await memory.listMarket(25)).length, 25, "a full page is still returned");
+  resetMemoryMarket();
+});
+
+// The holder profile used to scan listMarket(1000) and filter — 1000 rows per
+// view, and tags beyond the market cap silently vanished from "Currently
+// held". A direct per-holder query must return exactly that holder's tags.
+test("listDomainsForHolder returns exactly one holder's tags, price DESC", async () => {
+  seedDemoMarket([
+    { domain: "holder-a-low.com", holderHandle: "@alice", priceCents: 500 },
+    { domain: "holder-a-high.com", holderHandle: "alice", priceCents: 1500 },
+    { domain: "holder-b.com", holderHandle: "bob", priceCents: 2500 },
+  ]);
+  const alice = await listDomainsForHolder("alice");
+  assert.deepEqual(
+    alice.map((d) => d.domain),
+    ["holder-a-high.com", "holder-a-low.com"],
+    "only alice's tags, price DESC",
+  );
+  // Display form normalizes the same way getProfileByHandle does.
+  assert.deepEqual(
+    (await listDomainsForHolder("@ALICE")).map((d) => d.domain),
+    ["holder-a-high.com", "holder-a-low.com"],
+  );
+});
+
+// Display reads must tolerate a domain that was ELIGIBLE when it sold and was
+// added to the operator blocklist later. The strict money read
+// (getDomain → requireEligibleDomain) throws for reserved tags, which used to
+// 500 the immutable receipt and hide the ledger; createQuote/finalize still
+// refuse, so nothing can be bought.
+test("display reads tolerate a domain reserved after it was sold", async () => {
+  const { resetMemoryMarket, getDomain, getDomainForDisplay, listSalesForDomain } = await import("../../src/lib/repo.ts");
+  const memory = await import("../../src/lib/repo/memory.ts");
+  resetMemoryMarket();
+  // A statically reserved domain with a historical sale, seeded directly: the
+  // current money path cannot create one, but a future blocklist expansion can.
+  memory.seedDemoMarket([{ domain: "fbi.gov", holderHandle: "someone", priceCents: 500 }]);
+
+  await assert.rejects(
+    () => getDomain("fbi.gov"),
+    /DOMAIN_INELIGIBLE/,
+    "the strict money-adjacent read must keep refusing reserved tags",
+  );
+
+  const row = await getDomainForDisplay("fbi.gov");
+  assert.equal(row?.holderHandle, "someone", "the receipt's live state must still resolve");
+  const sales = await listSalesForDomain("fbi.gov");
+  assert.equal(sales.length, 1, "the immutable ledger must still render");
+  assert.equal(sales[0]?.priceCents, 500);
   resetMemoryMarket();
 });

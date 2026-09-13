@@ -38,6 +38,7 @@ const adapter: RepoAdapter = isProdDatastore ? supabaseAdapter : memoryAdapter;
 
 // ------------------------------------------------------------------- reads
 export const getDomain = adapter.getDomain;
+export const getDomainForDisplay = adapter.getDomainForDisplay;
 export const listMarket = adapter.listMarket;
 export const listSalesForBuyer = adapter.listSalesForBuyer;
 export const listMostContested = adapter.listMostContested;
@@ -45,7 +46,10 @@ export const listFastestRising = adapter.listFastestRising;
 export const listNewlyClaimed = adapter.listNewlyClaimed;
 export const listRecentSales = adapter.listRecentSales;
 export const listSalesForDomain = adapter.listSalesForDomain;
+export const listDomainsForHolder = adapter.listDomainsForHolder;
 export const getSale = adapter.getSale;
+export const getSaleByProviderPaymentId = adapter.getSaleByProviderPaymentId;
+export const listSuspendedHandles = adapter.listSuspendedHandles;
 export const getProfileByHandle = adapter.getProfileByHandle;
 export const getProfileById = adapter.getProfileById;
 export const marketValueCents = adapter.marketValueCents;
@@ -76,6 +80,12 @@ export const reconcileRefundProviderEvent = adapter.reconcileRefundProviderEvent
 // -------------------------------------------------------------------- reserved
 export const isReservedInDb = adapter.isReservedInDb;
 export const isDomainReserved = adapter.isDomainReserved;
+export const listReservedDomains = adapter.listReservedDomains;
+
+// Adapter-independent display helper: drop rows whose domain is reserved using
+// the cached blocklist set, without a per-domain query. Exported for callers
+// (sitemap) that fetch their own rows.
+export { dropReservedRows } from "./repo/shared.ts";
 
 // ------------------------------------------------------- demo seeding (non-prod)
 export const seedDemoMarket = adapter.seedDemoMarket;

@@ -4,6 +4,13 @@ Read `AGENTS.md` first. This file records the current zero-cost infrastructure s
 
 If older wording in `DEPLOY.md`, `BACKLOG.md`, or `LAUNCH_CHECKLIST.md` conflicts with this file, `AGENTS.md`, or `INTEGRATION_NOW.md`, use the newer agent files.
 
+Active beta hosting override (2026-09-12): the designated hosted beta runs on
+Cloudflare Worker `priced` at
+`https://priced.harshit10sehgal.workers.dev`. The Vercel project and
+`https://internet-price-tag.vercel.app` are retained for rollback/reference;
+older Vercel wording below is historical unless superseded by
+`INTEGRATION_NOW.md`.
+
 ## Locked objective
 
 Build one real hosted sandbox/closed-beta environment while keeping infrastructure subscription cost at zero wherever possible.
@@ -62,7 +69,7 @@ Do not enable Supabase PITR during the free sandbox phase.
 
 Before real customer payments, create and test a logical backup procedure using Supabase CLI `db dump` or `pg_dump`, and revisit environment isolation and disaster recovery.
 
-## Vercel
+## Vercel (rollback/reference only)
 
 The existing Vercel project has been renamed from `internet-price-tag` to `priced`.
 
@@ -76,7 +83,7 @@ The current ChatGPT Vercel connector receives `403 Forbidden` when querying this
 
 Repository must remain `Harshit-sehgal/priced` with `main` as the production branch.
 
-The stable production alias is currently `https://internet-price-tag.vercel.app`. A custom domain is not required to complete sandbox integration.
+Its alias `https://internet-price-tag.vercel.app` is rollback/reference only; the active beta origin is the Cloudflare Worker above. A custom domain is not required for the beta.
 
 ## Dodo Payments
 
@@ -118,7 +125,7 @@ Verify distributed quote, checkout, handle, user, IP, and domain rate limits aga
 
 Do not buy monitoring just to satisfy an old checklist item.
 
-Use free Vercel logs and free uptime checks where possible.
+Use the free Cloudflare live tail (`npx wrangler tail priced`) and the GitHub Actions health workflow where possible.
 
 At minimum verify:
 
@@ -131,7 +138,7 @@ Watch payment-critical structured events including `refund_failed`, `takeover_fi
 
 Tracks that can start in parallel:
 
-1. Vercel project/stable beta origin and Supabase Auth.
+1. Cloudflare Worker beta origin and Supabase Auth (Vercel remains rollback-only).
 2. Dodo Test Mode configuration.
 3. Upstash Free Redis configuration.
 

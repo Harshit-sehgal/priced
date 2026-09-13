@@ -13,10 +13,22 @@ because they need accounts, credentials and a legal review.
 
 1. Use the existing Supabase project `Priced` (`vctlhslzmplawvktnbgb`, `ap-south-1`). Do not create another project for this phase.
 2. Apply migrations deterministically — choose one path:
-   - **Supabase CLI (recommended):** `npx supabase db push` (applies `supabase/migrations/*` in order).
-   - **Plain SQL Editor / psql:** in **SQL Editor**, run `db/schema.sql` then `db/schema-extended.sql` in order, or `for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done`.
+   - **Fresh database, Supabase CLI (recommended):** `npx supabase db push` (applies `supabase/migrations/*` in order).
+   - **Plain SQL Editor / psql:** in **SQL Editor**, run `db/schema.sql`, then `db/schema-extended.sql`, then `db/ops.sql` (the operator moderation toolkit) in order, or `for f in supabase/migrations/*.sql; do psql "$DATABASE_URL" -f "$f"; done`. The portable files assume the Supabase role baseline; they now grant the privileges they need explicitly (migration `20260913000004`).
    - Either path creates the same tables, `finalize_takeover` RPC (service-role only), `analytics_events` sink, RLS, and `supabase_realtime` publication.
    - `supabase/migrations/` is the versioned history; `db/*.sql` is the portable single-apply equivalent — keep them in sync (see `supabase/migrations/README.md`).
+   - **Existing hosted project (`vctlhslzmplawvktnbgb`) — do NOT run `db push`.**
+     Its migration history was recorded by early applies under non-canonical
+     versions, so `db push` refuses with "Remote migration versions not found"
+     and a blind history repair would make it replay every canonical migration.
+     Apply NEW migrations to the hosted project one file at a time and verify:
+     ```bash
+     npx supabase db query --linked --file supabase/migrations/<new>.sql
+     # then confirm the object/grant exists, e.g.:
+     npx supabase db query --linked "select has_function_privilege('anon','public.<fn>(...)','execute');"
+     ```
+     Every migration is written to be re-runnable (idempotent DDL), so this is
+     safe; it simply bypasses the history table, which is already non-canonical.
 3. **Authentication → Providers**: enable **Google** (needs an OAuth client from Google Cloud Console with redirect `https://<project-ref>.supabase.co/auth/v1/callback`) and **Email magic link** (disable confirm-signup captchas if you don't need them).
 4. **Authentication → URL Configuration**: set Site URL to your app origin and add `<origin>/auth/callback` to redirect URLs.
 5. Copy from **Project Settings → API**:
@@ -43,19 +55,78 @@ because they need accounts, credentials and a legal review.
 5. Stripe remains only as an optional adapter (`STRIPE_*` keys) for experiments —
    when both are set, Dodo wins.
 
-## 3. Vercel (hosting)
+## 3. Cloudflare Workers (active free beta hosting)
+
+The active beta origin is:
+
+`https://priced.harshit10sehgal.workers.dev`
+
+The Worker is named `priced` and is deployed from this repository with
+OpenNext. It has the existing Supabase project, Dodo Test Mode, and the free
+Upstash Redis credentials configured as Worker secrets. Deploy with:
+
+```bash
+# 1. NEXT_PUBLIC_* are INLINED INTO THE CLIENT BUNDLE at build time. Worker
+#    runtime secrets do NOT reach the browser, so they MUST be exported here.
+#    A build without them ships a client that cannot create the Supabase
+#    browser client (login fails with AUTH_NOT_CONFIGURED) or subscribe to
+#    Realtime — and nothing detects it until a user clicks.
+export NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
+export NEXT_PUBLIC_SUPABASE_ANON_KEY=<public anon key>
+export NEXT_PUBLIC_APP_URL=https://priced.harshit10sehgal.workers.dev
+npm run cf:build   # precf:build wipes .next/.open-next first — see below
+
+# 2. `cf:deploy` uploads the LAST BUILD OUTPUT — it does not rebuild. Always
+#    run cf:build first, or you deploy a stale artifact.
+npm run cf:deploy
+```
+
+**Always build the Worker from a clean tree.** `precf:build` deletes `.next`
+and `.open-next` before every `cf:build`. A dirty `.next` shared with a plain
+`npm run build` (which inlines a DIFFERENT NEXT_PUBLIC_* environment) once
+produced a Worker that exceeded Cloudflare's CPU limit (error 1102) on every
+page render while `/api/health` stayed green — the artifact was wrong, not the
+code. `.next` is environment-specific; never reuse it across differently
+configured builds.
+
+The CI job also runs `cf:build`, but deliberately without public env: it is a
+compile gate for the Worker adaptation, not a deployable artifact. Production
+deploys must use the exported-variable sequence above.
+
+After a deploy, verify the public dependencies and route contract:
+
+```bash
+curl https://priced.harshit10sehgal.workers.dev/api/health
+curl https://priced.harshit10sehgal.workers.dev/api/health?check=db
+curl https://priced.harshit10sehgal.workers.dev/api/health?check=redis
+curl https://priced.harshit10sehgal.workers.dev/api/health?check=origin
+# Public pages must render (OpenNext 500s a prerendered page the proxy makes
+# dynamic at request time; every HTML route is force-dynamic for this reason):
+for p in /login /welcome /checkout/mock /about /terms /privacy /refunds; do
+  curl -fsS -o /dev/null "https://priced.harshit10sehgal.workers.dev$p" || echo "FAILED $p"
+done
+STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging
+```
+
+Keep ordinary untrusted previews secret-free/demo-only. Keep Dodo in Test Mode
+until the legal, backup, monitoring, closed-beta, and provider-wallet gates
+are explicitly cleared.
+
+## 3a. Vercel (rollback/reference hosting)
 
 > **Project rename:** the existing project id
 > `prj_uOsxAmofMbpp5spVp32YRINEKYys` has been renamed to `priced`.
-> Its stable production alias remains `https://internet-price-tag.vercel.app`.
+> Its historical production alias is `https://internet-price-tag.vercel.app`.
 > The Git integration continues to deploy `Harshit-sehgal/priced` from `main`.
 
 1. Reuse the linked project; framework is already configured as Next.js.
-2. Use `https://internet-price-tag.vercel.app` as the beta origin and update Supabase redirect URLs to match. A custom domain is not required for sandbox.
+2. Keep the Vercel deployment available for rollback only. The beta origin and
+   Supabase redirect URLs use Cloudflare as described in §3. A custom domain is
+   not required for sandbox.
 3. Set environment variables for **Production** and separately for
    **Preview** (§58 — never share production DB/webhooks with previews):
    ```
-   NEXT_PUBLIC_APP_URL=https://internet-price-tag.vercel.app # current beta origin
+   NEXT_PUBLIC_APP_URL=https://internet-price-tag.vercel.app # rollback/reference origin only
    NEXT_PUBLIC_SUPABASE_URL=...
    NEXT_PUBLIC_SUPABASE_ANON_KEY=...
    SUPABASE_SERVICE_ROLE_KEY=...        # Server secret — separate values for Production/Preview
@@ -82,6 +153,28 @@ delivery (replay the same event), stale quote (take the domain from another
 session before paying), simultaneous checkout from two sessions, refund of a
 stale payment. **No unexplained payment states are permitted.**
 
+Money-path hardening notes (deep-scan pass, 2026-09-12 — CI-verified, needs
+hosted verification before counting as staging-verified):
+- Refund idempotency keys are deterministic per payment
+  (`refund:<provider>:<paymentId>`, shared by all attempts for that payment),
+  per Dodo's "one key per logical intent, reused across retries" contract —
+  a timeout-after-success followed by a retry converges instead of
+  double-refunding. Do NOT rotate these keys per attempt.
+- Refund execution is pinned to the event's owning provider
+  (`getProviderForEvent`): a Dodo↔Stripe switch or key rotation between
+  payment and refund must not misdirect the refund to the wrong provider.
+- Dodo checkout/refund calls carry `AbortSignal.timeout(15_000)`. An abort is
+  indeterminate (the provider may have executed) — it stays on the
+  lease/manual-review path, never a clean failure.
+- Stale-but-signed webhook deliveries (valid HMAC, age past the 10-minute
+  window) flow through the money pipeline with a `webhook_stale_but_signed`
+  alert instead of a terminal 400. Verify with a dashboard replay of an old
+  `payment.succeeded` event: expect HTTP 200 and either a sale or a
+  ledger-tracked refund, never a silent drop.
+- `setQuoteCheckout` refuses terminal quotes (`QUOTE_NOT_CHECKOUTABLE` →
+  HTTP 409 `quote_<status>`). Verify by expiring a quote, then attempting
+  checkout: expect 409, and the quote row must stay `expired`.
+
 The repository command `npm run test:postgres` targets the real-project
 integration harness at `tests/integration/postgres.finalize.test.ts`; it is
 gated by `RUN_POSTGRES_TESTS=1` and the server-only Supabase service-role key.
@@ -106,16 +199,16 @@ verified, while the end-to-end HTTP/payment race remains outstanding.
 ## 6. Flip to live
 
 - Switch Dodo to live mode keys, update the webhook endpoint secret.
-- Watch the Vercel logs for the structured events from §56
+- Watch the Cloudflare live tail (`npx wrangler tail priced`) for the structured events from §56
   (`takeover_succeeded`, `payment_succeeded_takeover_stale`, `refund_failed`,
   `takeover_finalization_error`) and wire alerts to the error-level ones.
 - Start with the closed beta (§77) before announcing publicly.
 
 ## 7. Backups & recovery (production Supabase / Postgres)
 
-- **Enable** daily backups and Point-In-Time Recovery (PITR) in Supabase **Dashboard → Database → Backups**.
+- **At real-money promotion only** (not during the free beta, and not before the owner approves paid infrastructure): enable daily backups and Point-In-Time Recovery (PITR) in Supabase **Dashboard → Database → Backups**.
 - Keep at least 7 days of PITR window in production (verify via the dashboard after the first production sale).
-- **What is authoritative:** `sales` rows are the immutable ledger. `domains` can be rebuilt from sales; never rewrite sales to fix a bad state — append or operator-correct via `db/ops.sql` audit + reserved-domain/suspension actions.
+- **What is authoritative:** `sales` rows are the immutable ledger. `domains` can be rebuilt from sales; never rewrite sales to fix a bad state — append or operator-correct via `db/ops.sql` audit + reserved-domain/suspension actions. Reserving a tag that is currently held carries a refund obligation (Terms §7): refund the last funded payment in the provider dashboard first, then record the reservation with the refund reference in the audit detail — `db/ops.sql` has the query and the procedure.
 - **Restore procedure:** use Supabase's PITR restore to the last known-good timestamp, then verify `domains` vs `sales` consistency and that `finalize_takeover` still satisfies the in-memory race tests (`npm run test:concurrency`). Re-verify the webhook signing secret and `SUPABASE_SERVICE_ROLE_KEY` are unchanged after restore.
 - **Free-beta logical backup verification:** on 2026-09-11, the hosted public schema and data were dumped with the authenticated Supabase CLI and restored into an isolated PostgreSQL 17 container. The restore completed with 3 domains, 3 sales, 2 profiles, 97 analytics events, and 5 payment events. This is **Staging verified** evidence for the logical recovery procedure; it is not managed backup/PITR coverage. The Free Plan does not provide managed project backups, so keep PITR disabled during the free beta.
 
@@ -123,11 +216,12 @@ verified, while the end-to-end HTTP/payment race remains outstanding.
 
 All server logs are single-line JSON; optionally mirrored to Sentry when
 `SENTRY_DSN` is set (server-side, sampling 0.1; no client SDK yet).
-Add `SENTRY_DSN` to your Vercel envs (Production + Preview) when you wire
-the alert destination. Until then, Vercel Log Drains + the `/api/health`
-liveness probe are the monitoring path. Configure Log Drain alerts
-(Dashboard → Logs → Log Drains → *Create drain*) and a simple uptime check
-against `https://<your-domain>/api/health` (and `?check=db` for readiness).
+Add `SENTRY_DSN` to the active deployment env (Cloudflare Worker secret) when
+you wire the alert destination. Until then, the Cloudflare live tail
+(`npx wrangler tail priced`), the `.github/workflows/staging-health.yml`
+15-minute probe, and `https://<your-domain>/api/health` (and `?check=db` for
+readiness) are the monitoring path. Vercel Hobby log-drain controls were
+unavailable and apply only to the rollback deployment.
 
 Alert on any of these at level `error`:
 
@@ -153,17 +247,19 @@ Uptime checks (owner, any provider):
 - `GET /api/health` every 60s → expect `200 {"ok":true}`.
 - `GET /api/health?check=db` every 300s → expect `200`; alerts on `503`
   mean the service role cannot reach Postgres.
-- `.github/workflows/staging-health.yml` runs both checks every 15 minutes
+- `.github/workflows/staging-health.yml` runs liveness, Supabase readiness, and
+  Redis readiness checks every 15 minutes
   from GitHub Actions and can also be started with `workflow_dispatch`.
   GitHub Actions failure notifications provide a free baseline alert path;
-  this does not replace Vercel log drains or structured-event alerting.
+  this does not replace structured-event alerting.
 
-5xx rate alerting (Vercel Log Drain or Sentry): alert when 5xx responses
+5xx rate alerting (Cloudflare analytics or Sentry): alert when 5xx responses
 per minute exceed 5 for 5 consecutive minutes. The webhook route uses 500
 intentionally for retryable failures, so separate webhook-path 500s from
 page-route 5xx in the query when possible.
 
-Log-drain query patterns (Vercel JSON log fields):
+Structured-event query patterns (the JSON log line's fields; filter the
+Cloudflare live tail or your Sentry event stream):
 
 - refund failures:        `level="error" AND event="refund_failed"`
 - finalizer failures:     `level="error" AND event="takeover_finalization_error"`
@@ -186,13 +282,21 @@ secret/token/password/email keys), timestamp. No IPs, no emails, no user
 agents, no payment payloads (webhook bodies are reduced to a SHA-256 hash
 in `payment_events`).
 
-Retention: analytics rows are kept indefinitely for now. If the table grows
-past a few million rows, run (Quarterly, as an ops task):
+Retention: `public.prune_analytics_events()` (migration `20260912000002`)
+deletes rows older than 180 days in bounded batches. The daily scheduler is
+`.github/workflows/analytics-retention.yml` (free GitHub Actions); it only
+runs once the workflow is on the default branch AND the two repo secrets below
+exist.
+
+**Enforcement status:** scheduled workflows only run from the repository's
+default branch, and the job skips cleanly when repo secrets
+`SUPABASE_PROJECT_URL` + `SUPABASE_SERVICE_ROLE_KEY` are absent. Until both are
+true, the privacy page's "deleted after about 180 days" claim is NOT enforced.
+Owner step: add the two repository secrets and merge the workflow to `main`.
+Manual fallback (any time):
 
 ```sql
-delete from public.analytics_events
-where created_at < now() - interval '180 days'
-  and event in ('homepage_viewed','domain_searched','domain_opened');
+select public.prune_analytics_events();  -- repeat until it returns 0
 ```
 
 Holder-facing metrics (tag views, sessions, share visits, CTA clicks) use a
@@ -208,8 +312,10 @@ persists nowhere else, and cannot track a person across sessions or devices.
 
 ## Operational notes
 
-- Suspended users are blocked at quote creation and at finalization
-  (`ACCOUNT_SUSPENDED`). Suspend via the SQL in `db/ops.sql`.
+- Suspended users are blocked at quote creation (the API answers
+  `ACCOUNT_SUSPENDED`) and on the payment path (a succeeded payment for a
+  suspended buyer is refunded with reason `buyer_suspended`). Suspend via the
+  SQL in `db/ops.sql`.
 - Refunds of stale payments are automatic. Refunds of completed takeovers are
   not granted (see the refunds policy page) except as required by law.
 - The old placeholder UI is fully replaced; do not resurrect it.

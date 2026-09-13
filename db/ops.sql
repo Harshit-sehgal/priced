@@ -96,3 +96,86 @@ begin
   exception when undefined_object then null;
   end;
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Role privilege model (portable mirror of 20260913000004_role_grants.sql).
+--
+-- The Supabase baseline grants usage/table privileges to these roles by
+-- default; this bootstrap must not depend on it. Money/moderation tables are
+-- explicitly denied to client roles on top of RLS, discovery tables keep
+-- public SELECT, and profiles keeps only its public COLUMN grants (a
+-- table-level grant would expose suspended_at). service_role gets the DML the
+-- server client needs.
+do $$
+begin
+  begin
+    grant usage on schema public to anon, authenticated, service_role;
+  exception when undefined_object or insufficient_privilege then null;
+  end;
+
+  begin
+    grant select on table public.domains, public.sales to anon, authenticated;
+  exception when undefined_object or insufficient_privilege then null;
+  end;
+
+  begin
+    grant select (id, handle, display_name, avatar_url, created_at, bio, cta_label, cta_url)
+      on table public.profiles to anon, authenticated;
+  exception when undefined_object or insufficient_privilege then null;
+  end;
+
+  begin
+    revoke all on table
+      public.payment_events,
+      public.refunds,
+      public.payment_disputes,
+      public.reserved_domains,
+      public.credit_ledger,
+      public.admin_audit,
+      public.analytics_events
+      from anon, authenticated;
+  exception when undefined_object or insufficient_privilege then null;
+  end;
+
+  begin
+    grant select, insert, update, delete on table
+      public.domains,
+      public.sales,
+      public.profiles,
+      public.quotes,
+      public.payment_events,
+      public.refunds,
+      public.payment_disputes,
+      public.reserved_domains,
+      public.analytics_events,
+      public.credit_ledger,
+      public.admin_audit
+      to service_role;
+  exception when undefined_object or insufficient_privilege then null;
+  end;
+end $$;
+
+alter default privileges in schema public grant all on tables to service_role;
+
+alter function public.finalize_takeover(text, uuid, text, bigint, bigint, text)
+  set search_path = public, pg_temp;
+alter function public.holder_analytics(text, timestamptz)
+  set search_path = public, pg_temp;
+
+-- ---------------------------------------------------------------------------
+-- Reserving a tag that is CURRENTLY HELD carries a refund obligation (Terms
+-- §7, Refund Policy). This app has no automated post-sale refund path: the
+-- refund ledger exists for payments that never funded a takeover. An operator
+-- handles it manually, in order:
+--   1. find the last funded payment for the tag;
+--   2. issue the full refund in the payment provider dashboard with a reason
+--      like "operator reservation" (test mode first);
+--   3. record the reservation, naming the refund in the audit detail.
+-- Step 1:
+--   select s.buyer_handle, s.price_cents, s.provider_payment_id, s.created_at
+--   from public.sales s
+--   where s.domain = $1
+--   order by s.created_at desc
+--   limit 1;
+-- Step 3:
+--   select public.ops_reserve_domain('example.com', 'legal request; refunded pay_abc', 'operator');

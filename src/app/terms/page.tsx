@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+// See src/app/login/page.tsx: the proxy reads cookies on every matched route,
+// and OpenNext 500s a prerendered page that goes dynamic at request time.
+export const dynamic = "force-dynamic";
+
 export const metadata = { title: "Terms of Service" };
 
 export default function TermsPage() {

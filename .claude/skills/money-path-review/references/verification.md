@@ -106,9 +106,10 @@ your 500 asked for a retry and then threw it away.
 A quick audit for the "forgot to mark state" shape:
 
 ```bash
-grep -n "status: 500" src/app/api/webhooks/payments/route.ts | while IFS=: read -r ln _; do
+F=src/app/api/webhooks/payments/route.ts
+grep -n "status: 500" "$F" | while IFS=: read -r ln _; do
   start=$((ln-12))
-  echo "line $ln marks status: $(sed -n "${start},${ln}p" file | grep -c markPaymentEventStatus)"
+  echo "line $ln marks status: $(sed -n "${start},${ln}p" "$F" | grep -c markPaymentEventStatus)"
 done
 ```
 

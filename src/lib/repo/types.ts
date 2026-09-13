@@ -59,7 +59,16 @@ export type RepoQuote = {
 
 export type TakeoverOutcome =
   | { ok: true; sale: RepoSale }
-  | { ok: false; code: "STALE_QUOTE" | "WRONG_PRICE" | "ALREADY_HOLDER" | "IDEMPOTENCY_CONFLICT" | "FINALIZE_ERROR" };
+  | {
+      ok: false;
+      code:
+        | "STALE_QUOTE"
+        | "WRONG_PRICE"
+        | "ALREADY_HOLDER"
+        | "IDEMPOTENCY_CONFLICT"
+        | "PAYMENT_ALREADY_REFUNDED"
+        | "FINALIZE_ERROR";
+    };
 
 export type FinalizeInput = {
   domain: string;
@@ -74,7 +83,11 @@ export type RepoRefundStatus = "attempting" | "failed" | "succeeded" | "manual_r
 
 export type RefundClaim = {
   claimed: boolean;
-  status: RepoRefundStatus;
+  /**
+   * `already_finalized` is the cross-check verdict: a sale exists for this
+   * payment id, so it is not refundable. Callers must ack (never retry) it.
+   */
+  status: RepoRefundStatus | "already_finalized";
   attempts: number;
   claimToken: string | null;
   lastError: string | null;
@@ -86,7 +99,19 @@ export type RefundClaim = {
  */
 export type RepoAdapter = {
   // ------------------------------------------------------------------- reads
+  /**
+   * Strict, money-adjacent read: only an eligible (non-reserved, well-formed)
+   * domain can resolve. Throws DOMAIN_INELIGIBLE for a reserved/malformed one.
+   * Use getDomainForDisplay for pages that must render immutable history even
+   * after the operator blocklist grew to include the domain.
+   */
   getDomain(domain: string): Promise<RepoDomain | null>;
+  /**
+   * Display-only read: normalizes the input and never throws on ineligible
+   * domains. A tag reserved AFTER it was sold must still render its receipt
+   * and ledger; the money gates (createQuote/finalize_takeover) stay strict.
+   */
+  getDomainForDisplay(domain: string): Promise<RepoDomain | null>;
   listMarket(limit?: number): Promise<RepoDomain[]>;
   /** Sales where the given handle is the buyer, newest first. */
   listSalesForBuyer(buyerHandle: string, limit?: number): Promise<RepoSale[]>;
@@ -109,7 +134,26 @@ export type RepoAdapter = {
   listNewlyClaimed(limit?: number): Promise<Array<{ domain: string; priceCents: number; holderHandle: string; createdAt: string }>>;
   listRecentSales(limit?: number): Promise<RepoSale[]>;
   listSalesForDomain(domain: string, limit?: number): Promise<RepoSale[]>;
+  /**
+   * Every live tag held by one handle, price DESC. A direct query, not a
+   * scan of the market: the holder profile must show ALL of a holder's tags
+   * (the market list is capped) without fetching the whole market per view.
+   */
+  listDomainsForHolder(handle: string): Promise<RepoDomain[]>;
   getSale(saleId: string): Promise<RepoSale | null>;
+  /**
+   * The idempotency key of the money path: a provider payment id resolves to
+   * the sale it funded, or null. Callers MUST consult this BEFORE deciding to
+   * refund — a payment with a committed sale is never refundable, no matter
+   * what the quote's current status or the buyer's current standing says.
+   */
+  getSaleByProviderPaymentId(providerPaymentId: string): Promise<RepoSale | null>;
+  /**
+   * Which of these handles are suspended (moderation state). One batched
+   * query, so display surfaces that list many holders can honour suspension
+   * without an N+1.
+   */
+  listSuspendedHandles(handles: string[]): Promise<Set<string>>;
   getProfileByHandle(handle: string): Promise<RepoProfile | null>;
   getProfileById(id: string): Promise<RepoProfile | null>;
   marketValueCents(): Promise<number>;
@@ -164,6 +208,12 @@ export type RepoAdapter = {
     providerPaymentId: string;
     eventType: string;
     status: string;
+    /**
+     * When the row last changed to its current status. The webhook route uses
+     * the AGE of a `received` row to re-enter processing after a crashed or
+     * status-write-failed delivery (otherwise it is acknowledged forever).
+     */
+    processedAt: string | null;
   } | null>;
   markPaymentEventStatus(provider: string, providerEventId: string, status: "processed" | "ignored" | "error", error?: string): Promise<void>;
 
@@ -187,6 +237,11 @@ export type RepoAdapter = {
    * pending/review by the provider and settle later, so this path is allowed to
    * complete a manual-review row without a live claim token. A later failure
    * event must never downgrade a refund already confirmed as succeeded.
+   *
+   * Returns whether a SALE already exists for this payment, evaluated under
+   * the same serialization as the ledger write: `saleExists: true` is a
+   * provider-level contradiction (refunded after the takeover) that callers
+   * must alert on, never silently swallow.
    */
   reconcileRefundProviderEvent(args: {
     provider: string;
@@ -195,11 +250,17 @@ export type RepoAdapter = {
     status: Extract<RepoRefundStatus, "succeeded" | "manual_review">;
     amountCents?: number | null;
     error?: string;
-  }): Promise<void>;
+  }): Promise<{ saleExists: boolean }>;
 
   // ------------------------------------------------------------------ reserved
   isReservedInDb(domain: string): Promise<boolean>;
   isDomainReserved(domain: string): Promise<boolean>;
+  /**
+   * The operator-managed blocklist as a set, for DISPLAY filtering over many
+   * domains at once (sitemap, discovery). Implementations may cache briefly;
+   * the money gate (assertNotReserved/createQuote) never uses this.
+   */
+  listReservedDomains(): Promise<Set<string>>;
 
   // --------------------------------------------------------------- demo seeding
   seedDemoMarket(items: Array<{ domain: string; holderHandle: string; priceCents: number }>): void;

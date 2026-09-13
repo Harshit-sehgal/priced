@@ -5,7 +5,7 @@
 // this file.
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { quoteFor, type PriceQuote } from "../game.ts";
+import { normalizeDomain, quoteFor, type PriceQuote } from "../game.ts";
 import { requireEligibleDomain } from "../domains.ts";
 import { logEvent } from "../logger.ts";
 import { isProdDatastore, supabaseServiceKey, supabaseUrl } from "./env.ts";
@@ -108,6 +108,14 @@ function toProfile(data: Record<string, string | null>): RepoProfile {
 // ------------------------------------------------------------------- reads
 export async function getDomain(domain: string): Promise<RepoDomain | null> {
   const d = requireEligibleDomain(domain);
+  const { data, error } = await client().from("domains").select("*").eq("domain", d).maybeSingle();
+  if (error) throw error;
+  return data ? toDomain(data) : null;
+}
+
+export async function getDomainForDisplay(domain: string): Promise<RepoDomain | null> {
+  const d = normalizeDomain(domain);
+  if (!d) return null;
   const { data, error } = await client().from("domains").select("*").eq("domain", d).maybeSingle();
   if (error) throw error;
   return data ? toDomain(data) : null;
@@ -298,7 +306,11 @@ export async function listRecentSales(limit = DEFAULT_RECENT_SALES_LIMIT): Promi
 }
 
 export async function listSalesForDomain(domain: string, limit = DEFAULT_SALES_LIMIT): Promise<RepoSale[]> {
-  const d = requireEligibleDomain(domain);
+  // Display-only, so a domain reserved AFTER it had sales must still render its
+  // ledger (the domain page and receipts present it as immutable history).
+  // normalizeDomain, not requireEligibleDomain, which throws for reserved tags.
+  const d = normalizeDomain(domain);
+  if (!d) return [];
   const { data, error } = await client()
     .from("sales")
     .select("*")
@@ -309,11 +321,70 @@ export async function listSalesForDomain(domain: string, limit = DEFAULT_SALES_L
   return (data ?? []).map(toSale);
 }
 
+/** Every live tag held by one handle, price DESC. */
+export async function listDomainsForHolder(handle: string): Promise<RepoDomain[]> {
+  const h = handle.toLowerCase().replace(/^@/, "");
+  const { data, error } = await client()
+    .from("domains")
+    .select("*")
+    .eq("holder_handle", h)
+    .order("price_cents", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(toDomain);
+}
+
 export async function getSale(saleId: string): Promise<RepoSale | null> {
   if (!isIdShaped(saleId)) return null;
   const { data, error } = await client().from("sales").select("*").eq("id", saleId).maybeSingle();
   if (error) throw error;
   return data ? toSale(data) : null;
+}
+
+export async function getSaleByProviderPaymentId(providerPaymentId: string): Promise<RepoSale | null> {
+  if (!providerPaymentId) return null;
+  const { data, error } = await client()
+    .from("sales")
+    .select("*")
+    .eq("provider_payment_id", providerPaymentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? toSale(data) : null;
+}
+
+/**
+ * Which of these handles are suspended, in chunked queries.
+ *
+ * Lenient by design, like reservedDisplaySet: this feeds the sitemap, and a
+ * transient profiles/permission error must not turn /sitemap.xml into a 500
+ * for every crawler. On error it returns what it has (possibly nothing) and
+ * logs; the money and moderation gates never use this.
+ */
+export async function listSuspendedHandles(handles: string[]): Promise<Set<string>> {
+  const unique = [...new Set(handles.map((h) => h.toLowerCase().replace(/^@/, "")).filter(Boolean))];
+  const suspended = new Set<string>();
+  if (unique.length === 0) return suspended;
+  const CHUNK = 200; // keep the PostgREST query string bounded
+  for (let i = 0; i < unique.length; i += CHUNK) {
+    const chunk = unique.slice(i, i + CHUNK);
+    try {
+      const { data, error } = await client()
+        .from("profiles")
+        .select("handle")
+        .in("handle", chunk)
+        .not("suspended_at", "is", null);
+      if (error) {
+        logEvent("suspended_lookup_failed", "warn", { count: chunk.length, detail: error.message });
+        continue;
+      }
+      for (const row of data ?? []) suspended.add(String(row.handle));
+    } catch (e) {
+      logEvent("suspended_lookup_failed", "warn", {
+        count: chunk.length,
+        detail: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return suspended;
 }
 
 export async function getProfileByHandle(handle: string): Promise<RepoProfile | null> {
@@ -386,7 +457,15 @@ export async function getQuote(quoteId: string): Promise<RepoQuote | null> {
 }
 
 export async function markQuoteStatus(quoteId: string, status: RepoQuote["status"]): Promise<void> {
-  const { error } = await client().from("quotes").update({ status }).eq("id", quoteId);
+  // `consumed` is terminal. A concurrent losing challenger must not downgrade
+  // a committed quote back to stale/expired: the winner's duplicate delivery
+  // would then read a terminal quote, and (before the payment-id idempotency
+  // lookup existed) refund a sale that was already funded. The `status <>
+  // consumed` predicate is evaluated by Postgres against the latest committed
+  // row version, so it also closes the read-then-write race.
+  let query = client().from("quotes").update({ status }).eq("id", quoteId);
+  if (status !== "consumed") query = query.neq("status", "consumed");
+  const { error } = await query;
   if (error) throw error;
 }
 
@@ -443,6 +522,36 @@ export async function setQuoteCheckout(args: {
 }
 
 // --------------------------------------------------------------- finalization
+
+/**
+ * Map a finalize_takeover RPC error to the outcome vocabulary. Exported so the
+ * mapping itself is unit-testable without a live Postgres.
+ *
+ * The 23505 branch matters: `sales.provider_payment_id` is UNIQUE, and a
+ * racing transaction that committed after finalize's post-lock idempotency
+ * recheck makes the final INSERT raise a duplicate-key violation. Mapping that
+ * to FINALIZE_ERROR would make src/lib/takeover.ts refund — the buyer would
+ * keep the tag AND get the money back. It is the same condition
+ * IDEMPOTENCY_CONFLICT exists for (the payment already funded a sale), so it is
+ * an alert, never a refund.
+ */
+export function mapFinalizeRpcError(error: { message: string; code?: string | null }): TakeoverOutcome {
+  const code = error.message.split(" ")[0]?.replace(/["']/g, "");
+  if (code === "STALE_QUOTE") return { ok: false, code: "STALE_QUOTE" };
+  if (code === "ALREADY_HOLDER") return { ok: false, code: "ALREADY_HOLDER" };
+  if (code === "WRONG_PRICE") return { ok: false, code: "WRONG_PRICE" };
+  if (code === "IDEMPOTENCY_CONFLICT") return { ok: false, code: "IDEMPOTENCY_CONFLICT" };
+  if (code === "PAYMENT_REFUNDING") return { ok: false, code: "PAYMENT_ALREADY_REFUNDED" };
+  if (code === "RESERVED_DOMAIN") return { ok: false, code: "FINALIZE_ERROR" };
+  // Only the sales.provider_payment_id constraint proves the payment already
+  // funded a sale. A blanket 23505 would misclassify a future unique
+  // constraint as this alert-only condition and silently skip a refund.
+  if (/duplicate key value violates unique constraint .*provider_payment_id/i.test(error.message)) {
+    return { ok: false, code: "IDEMPOTENCY_CONFLICT" };
+  }
+  return { ok: false, code: "FINALIZE_ERROR" };
+}
+
 export async function finalizeTakeover(input: FinalizeInput): Promise<TakeoverOutcome> {
   const { data, error } = await client().rpc("finalize_takeover", {
     p_domain: input.domain,
@@ -452,15 +561,7 @@ export async function finalizeTakeover(input: FinalizeInput): Promise<TakeoverOu
     p_paid_cents: input.paidCents,
     p_provider_payment_id: input.providerPaymentId,
   });
-  if (error) {
-    const code = error.message.split(" ")[0]?.replace(/["']/g, "");
-    if (code === "STALE_QUOTE") return { ok: false, code: "STALE_QUOTE" };
-    if (code === "ALREADY_HOLDER") return { ok: false, code: "ALREADY_HOLDER" };
-    if (code === "WRONG_PRICE") return { ok: false, code: "WRONG_PRICE" };
-    if (code === "IDEMPOTENCY_CONFLICT") return { ok: false, code: "IDEMPOTENCY_CONFLICT" };
-    if (code === "RESERVED_DOMAIN") return { ok: false, code: "FINALIZE_ERROR" };
-    return { ok: false, code: "FINALIZE_ERROR" };
-  }
+  if (error) return mapFinalizeRpcError(error);
   return { ok: true, sale: toSale(data) };
 }
 
@@ -492,7 +593,10 @@ export async function updateProfileExtras(args: {
     .update({ bio: args.bio, cta_label: args.ctaLabel, cta_url: args.ctaUrl })
     .eq("id", args.id)
     .select("*")
-    .single();
+    // maybeSingle, not single: a user with no profile row (handle not yet
+    // claimed) must resolve to "profile_missing" (404), and `.single()` turns
+    // zero rows into a thrown PGRST116 that surfaced as a 500.
+    .maybeSingle();
   if (error) throw error;
   return data ? toProfile(data) : null;
 }
@@ -530,10 +634,11 @@ export async function getPaymentEvent(provider: string, providerEventId: string)
   providerPaymentId: string;
   eventType: string;
   status: string;
+  processedAt: string | null;
 } | null> {
   const { data, error } = await client()
     .from("payment_events")
-    .select("provider, provider_event_id, provider_payment_id, event_type, status")
+    .select("provider, provider_event_id, provider_payment_id, event_type, status, processed_at")
     .eq("provider", provider)
     .eq("provider_event_id", providerEventId)
     .maybeSingle();
@@ -545,6 +650,7 @@ export async function getPaymentEvent(provider: string, providerEventId: string)
     providerPaymentId: String(data.provider_payment_id),
     eventType: String(data.event_type),
     status: String(data.status),
+    processedAt: data.processed_at == null ? null : String(data.processed_at),
   };
 }
 
@@ -579,7 +685,9 @@ export async function claimRefundAttempt(args: {
   if (!row) throw new Error("REFUND_CLAIM_EMPTY");
   return {
     claimed: Boolean(row.claimed),
-    status: String(row.status) as RepoRefundStatus,
+    // The SQL may return `already_finalized` (a sale exists for this payment);
+    // the union keeps that distinct from the ledger states.
+    status: String(row.status) as RefundClaim["status"],
     attempts: Number(row.attempts),
     claimToken: row.claim_token == null ? null : String(row.claim_token),
     lastError: row.last_error == null ? null : String(row.last_error),
@@ -618,6 +726,13 @@ export async function completeRefundAttempt(args: {
  * pending/review by the provider and settle later, so this path is allowed to
  * complete a manual-review row without a live claim token. A later failure
  * event must never downgrade a refund already confirmed as succeeded.
+ *
+ * Delegated to the `reconcile_refund_event` RPC, which takes the SAME
+ * per-payment advisory lock as finalize_takeover and claim_refund_attempt.
+ * Without that lock a dashboard refund event could insert a refund row
+ * concurrently with a takeover finalization for the same payment, producing
+ * the tag-and-money-back outcome this migration exists to prevent. The SQL
+ * also carries the never-downgrade rule under FOR UPDATE.
  */
 export async function reconcileRefundProviderEvent(args: {
   provider: string;
@@ -626,53 +741,21 @@ export async function reconcileRefundProviderEvent(args: {
   status: Extract<RepoRefundStatus, "succeeded" | "manual_review">;
   amountCents?: number | null;
   error?: string;
-}): Promise<void> {
-  const now = new Date().toISOString();
-
-  const { data: existing, error: readError } = await client()
-    .from("refunds")
-    .select("status")
-    .eq("provider", args.provider)
-    .eq("provider_payment_id", args.paymentId)
-    .maybeSingle();
-  if (readError) throw readError;
-  if (existing?.status === "succeeded") return;
-
-  if (existing) {
-    const { error } = await client()
-      .from("refunds")
-      .update({
-        status: args.status,
-        claim_token: null,
-        lease_expires_at: null,
-        last_error: args.error ?? null,
-        updated_at: now,
-        completed_at: now,
-        ...(args.amountCents == null ? {} : { amount_cents: args.amountCents }),
-      })
-      .eq("provider", args.provider)
-      .eq("provider_payment_id", args.paymentId);
-    if (error) throw error;
-    return;
-  }
-
-  // A provider event can arrive after a transient database failure created
-  // the refund remotely but before our ledger insert completed. Preserve the
-  // provider event as the durable source of truth; a concurrent insert race
-  // is retried by the provider on the next delivery.
-  const { error } = await client().from("refunds").insert({
-    provider: args.provider,
-    provider_payment_id: args.paymentId,
-    provider_event_id: args.eventId,
-    reason: "provider_refund_event",
-    amount_cents: args.amountCents ?? null,
-    status: args.status,
-    attempts: 0,
-    last_error: args.error ?? null,
-    updated_at: now,
-    completed_at: now,
+}): Promise<{ saleExists: boolean }> {
+  const { data, error } = await client().rpc("reconcile_refund_event", {
+    p_provider: args.provider,
+    p_provider_payment_id: args.paymentId,
+    p_provider_event_id: args.eventId,
+    p_status: args.status,
+    p_amount_cents: args.amountCents ?? null,
+    p_error: args.error ?? null,
   });
   if (error) throw error;
+  // The RPC returns one row: { status, sale_exists }. The verdict is computed
+  // under the same advisory lock as the write, so it cannot miss a concurrent
+  // finalization the way a pre-call sale lookup did.
+  const row = (Array.isArray(data) ? data[0] : data) as { sale_exists?: unknown } | undefined;
+  return { saleExists: row?.sale_exists === true };
 }
 
 /**
@@ -733,6 +816,16 @@ export async function isDomainReserved(domain: string): Promise<boolean> {
   const { evaluateDomain } = await import("../domains.ts");
   if (evaluateDomain(domain).reason === "reserved") return true;
   return isReservedInDb(domain);
+}
+
+/**
+ * The whole operator blocklist, briefly cached (same 30s display cache the
+ * discovery surfaces already use). Callers that need to filter a large batch
+ * of domains — the sitemap was doing up to 500 individual queries per crawler
+ * hit — should use this instead of isReservedInDb per domain.
+ */
+export async function listReservedDomains(): Promise<Set<string>> {
+  return reservedDisplaySet();
 }
 
 // ------------------------------------------------------- demo seeding (non-prod)

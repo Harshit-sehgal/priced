@@ -1,25 +1,38 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { money, quoteFor } from "@/lib/game.ts";
-import { getDomain, getProfileByHandle, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
+import { getDomain, getDomainForDisplay, getProfileByHandle, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
 import { TakeoverCTA } from "@/components/TakeoverCTA";
 import { HistoryLedger } from "@/components/HistoryLedger";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { HolderCta } from "@/components/HolderCta";
+import { holderCtaVisible } from "@/lib/cta";
 import { persistViewEvent } from "@/lib/view-events";
+import { safeDecodeURIComponent } from "@/lib/navigation";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ domain: string }> };
 
+// Provenance ledger page size. The ledger is labelled truncated when the slice
+// is full, so its totals and "oldest" line are never presented as all-time.
+const LEDGER_PAGE_SIZE = 30;
+
 async function loadDomain(raw: string): Promise<{ canonical: string | null; reason: string; row: RepoDomain | null; sales: Awaited<ReturnType<typeof listSalesForDomain>> }> {
   const { evaluateDomain } = await import("@/lib/domains.ts");
-  const evalResult = evaluateDomain(decodeURIComponent(raw));
+  const evalResult = evaluateDomain(safeDecodeURIComponent(raw));
   if (!evalResult.eligible || !evalResult.canonicalDomain) {
     // Reserved domains have a canonical form but are ineligible — surface them
     // as a dedicated "unavailable" state instead of the generic error page.
+    // Display reads are tolerant, so a domain reserved AFTER it had sales still
+    // shows its immutable ledger (strict reads throw for reserved tags).
     if (evalResult.reason === "reserved" && evalResult.canonicalDomain) {
-      return { canonical: evalResult.canonicalDomain, reason: "reserved", row: null, sales: [] };
+      const canonical = evalResult.canonicalDomain;
+      const [row, sales] = await Promise.all([
+        getDomainForDisplay(canonical),
+        listSalesForDomain(canonical, LEDGER_PAGE_SIZE),
+      ]);
+      return { canonical, reason: "reserved", row, sales };
     }
     return { canonical: null, reason: evalResult.reason, row: null, sales: [] };
   }
@@ -30,7 +43,7 @@ async function loadDomain(raw: string): Promise<{ canonical: string | null; reas
   const [reservedInDb, row, sales] = await Promise.all([
     isDomainReserved(canonical),
     getDomain(canonical),
-    listSalesForDomain(canonical, 30),
+    listSalesForDomain(canonical, LEDGER_PAGE_SIZE),
   ]);
   if (reservedInDb) {
     return { canonical, reason: "reserved", row, sales };
@@ -92,7 +105,9 @@ export default async function DomainPage({ params }: Params) {
     });
   }
   // Holder's public CTA (bio/CTA live on the profile; shown here so a
-  // holding actually generates exposure for its holder).
+  // holding actually generates exposure for its holder). Suspension hides the
+  // profile page, so holderCtaVisible() hides the profile's outbound CTA here
+  // too. The handle itself stays visible: holdings are ledger truth.
   const holderProfile = !unclaimed && row?.holderHandle
     ? await getProfileByHandle(row.holderHandle).catch(() => null)
     : null;
@@ -154,7 +169,7 @@ export default async function DomainPage({ params }: Params) {
                   <span className="holder-dot" />
                   @{row?.holderHandle}
                 </Link>
-                {holderProfile?.ctaLabel && holderProfile?.ctaUrl ? (
+                {holderCtaVisible(holderProfile) && holderProfile?.ctaLabel && holderProfile?.ctaUrl ? (
                   <div className="stack" style={{ gap: "var(--space-1)" }}>
                     <HolderCta label={holderProfile.ctaLabel} url={holderProfile.ctaUrl} handle={holderProfile.handle} />
                     <span className="small muted" style={{ fontSize: 11 }}>
@@ -222,7 +237,7 @@ export default async function DomainPage({ params }: Params) {
 
       <section className="section-rule stack">
         <h2 className="display display-section">Tag History</h2>
-        <HistoryLedger sales={sales} />
+        <HistoryLedger sales={sales} truncated={sales.length >= LEDGER_PAGE_SIZE} />
       </section>
 
       <section className="notice">

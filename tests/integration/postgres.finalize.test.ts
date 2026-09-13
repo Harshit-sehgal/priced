@@ -181,20 +181,19 @@ describe("postgres finalize_takeover (real DB)", () => {
   test("reserved domain rolls back (no sale, no holder)", { skip: !enabled }, async () => {
     const domain = uniq("reserved");
     const client = await sb();
-    // Reserve the domain via direct insert (service role bypasses RLS).
+    // Idempotent setup: clear any stale reservation from a previous run, then
+    // reserve. If the insert fails, the harness cannot prove anything, so this
+    // FAILS instead of silently continuing and accepting whatever comes back.
+    await client.from("reserved_domains").delete().eq("domain", domain);
     const { error: resErr } = await client.from("reserved_domains").insert({ domain, reason: "test harness", created_by: "postgres.test" });
-    // If the table is missing, the RPC itself will still handle the domain via
-    // the reserved check's `exists` (which returns false) — treat as skip.
-    if (resErr && !String(resErr.message).includes("duplicate")) {
-      // If insert fails for reasons other than duplicate, still run the takeover
-      // check — the domain may already be reserved, or the table may not exist.
-    }
+    assert.ok(!resErr, `harness could not reserve ${domain}: ${resErr?.message}`);
+
     const buyer = uuid();
     const res = await finalize({ domain, buyerUserId: buyer, buyerHandle: "mallory", expectedVersion: 0, paidCents: 500, providerPaymentId: `pi-${buyer.slice(0, 8)}` });
-    // finalize_takeover surfaces RESERVED_DOMAIN as FINALIZE_ERROR via repo.ts;
-    // at the RPC layer the raw code is RESERVED_DOMAIN.
-    const c = codeOf(res.error);
-    assert.ok(c === "RESERVED_DOMAIN" || c === "FINALIZE_ERROR", `expected RESERVED, got ${c}: ${res.error?.message}`);
+    // This harness calls the raw RPC, so the code is the SQL guard's own
+    // RESERVED_DOMAIN — not the FINALIZE_ERROR repo.ts maps it to.
+    assert.equal(codeOf(res.error), "RESERVED_DOMAIN", res.error?.message ?? "expected a reserved-domain rejection");
+
     // Cleanup: best-effort unreserve so the test domain doesn't stay blocked.
     await client.from("reserved_domains").delete().eq("domain", domain);
   });

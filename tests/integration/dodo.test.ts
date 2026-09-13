@@ -7,8 +7,10 @@ import { createHmac } from "node:crypto";
 import {
   DodoPaymentsProvider,
   getPaymentProvider,
+  getProviderForEvent,
   listMemoryDisputes,
   recordPaymentDispute,
+  refundIdempotencyKey,
   resetMemoryDisputes,
   UNVERIFIABLE_AMOUNT_CENTS,
 } from "../../src/lib/payments.ts";
@@ -146,8 +148,6 @@ test("dodo webhook rejects tampered payloads, missing headers and stale timestam
     const stale = provider.verifyWebhook(raw, signDodo(id, oldTs, raw, secret), { webhookId: id, webhookTimestamp: oldTs });
     assert.deepEqual(stale, { ok: false, reason: "stale_timestamp" });
 
-    const noSecret = provider.verifyWebhook(raw, signDodo(id, ts, raw, secret), { webhookId: id, webhookTimestamp: ts });
-    void noSecret;
     delete process.env.DODO_PAYMENTS_WEBHOOK_KEY;
     const missing = new DodoPaymentsProvider().verifyWebhook(raw, "v1,x", { webhookId: id, webhookTimestamp: ts });
     assert.deepEqual(missing, { ok: false, reason: "webhook_secret_missing" });
@@ -183,11 +183,11 @@ test("dodo checkout posts dynamic PWYW amount + quote metadata, refund posts pay
   const realFetch = globalThis.fetch;
   try {
     useDodoEnv();
-    const seen: Array<{ url: string; body: Record<string, unknown> }> = [];
-    globalThis.fetch = (async (url: unknown, init?: { body?: unknown }) => {
+    const seen: Array<{ url: string; body: Record<string, unknown>; headers: Record<string, string> }> = [];
+    globalThis.fetch = (async (url: unknown, init?: { body?: unknown; headers?: Record<string, string> }) => {
       const u = String(url);
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
-      seen.push({ url: u, body });
+      seen.push({ url: u, body, headers: (init?.headers ?? {}) as Record<string, string> });
       if (u.endsWith("/checkouts")) {
         return { ok: true, status: 200, json: async () => ({ session_id: "cks_test_1", checkout_url: "https://checkout.test/s/1" }), text: async () => "" } as unknown as Response;
       }
@@ -203,6 +203,7 @@ test("dodo checkout posts dynamic PWYW amount + quote metadata, refund posts pay
       amountCents: 94940,
       successUrl: "https://app.test/checkout/return?quote_id=22222222-2222-4222-8222-222222222222",
       cancelUrl: "https://app.test/domain/openai.com?checkout=cancelled",
+      idempotencyKey: "22222222-2222-4222-8222-222222222222",
     });
     assert.equal(checkout.checkoutUrl, "https://checkout.test/s/1");
     assert.equal(checkout.providerPaymentId, "cks_test_1");
@@ -216,12 +217,109 @@ test("dodo checkout posts dynamic PWYW amount + quote metadata, refund posts pay
     assert.equal(meta.quote_id, "22222222-2222-4222-8222-222222222222");
     assert.equal(meta.amount_cents, "94940");
     assert.ok(seen[0].url.startsWith("https://test.dodopayments.com/"));
+    // One quote maps to one provider session: the checkout idempotency key is
+    // what stops a timed-out create from minting a second payable session.
+    assert.equal(seen[0].headers["Idempotency-Key"], "checkout:22222222-2222-4222-8222-222222222222");
 
-    const refund = await provider.refundPayment("pay_test_001", "stale_quote");
+    const refund = await provider.refundPayment({
+      paymentId: "pay_test_001",
+      reason: "stale_quote",
+      idempotencyKey: refundIdempotencyKey("dodo", "pay_test_001"),
+    });
     assert.equal(refund.ok, true);
     assert.equal(seen[1].body.payment_id, "pay_test_001");
+    assert.equal(refund.indeterminate, undefined, "a definitive 200/succeeded response is not indeterminate");
   } finally {
     globalThis.fetch = realFetch;
+    restoreEnv(snap);
+  }
+});
+
+// Dodo documents the Standard-Webhooks request contract but NOT an
+// Idempotency-Key header on POST /refunds. A timeout, abort, network failure,
+// or unreadable 200 body may therefore have executed the refund, and the
+// client cannot retry safely. Every such outcome must be flagged
+// `indeterminate` so the ledger parks it for manual reconciliation instead of
+// retrying into a double refund. HTTP error statuses are definitive (the
+// provider answered), and pending/review/failed statuses are definitive too.
+test("dodo refund marks unknown outcomes as indeterminate, never retryable", async () => {
+  const snap = snapshotEnv();
+  const realFetch = globalThis.fetch;
+  try {
+    useDodoEnv();
+    const provider = new DodoPaymentsProvider();
+
+    // 1. Fetch rejects (timeout/abort/network): unknown disposition.
+    globalThis.fetch = (async () => {
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    }) as unknown as typeof fetch;
+    const aborted = await provider.refundPayment({ paymentId: "pay_abort", reason: "stale", idempotencyKey: "k1" });
+    assert.equal(aborted.ok, false);
+    assert.equal(aborted.indeterminate, true, "a timeout must be terminal-indeterminate");
+
+    // 2. HTTP 500: the provider answered, nothing refunded -> retryable.
+    globalThis.fetch = (async () => ({
+      ok: false,
+      status: 500,
+      text: async () => "upstream error",
+    })) as unknown as typeof fetch;
+    const httpError = await provider.refundPayment({ paymentId: "pay_500", reason: "stale", idempotencyKey: "k2" });
+    assert.equal(httpError.ok, false);
+    assert.notEqual(httpError.indeterminate, true, "an HTTP error is a definitive failure");
+
+    // 3. HTTP 200 with an unrecognized body: the refund may have been accepted.
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+      text: async () => "",
+    })) as unknown as typeof fetch;
+    const unreadable = await provider.refundPayment({ paymentId: "pay_200", reason: "stale", idempotencyKey: "k3" });
+    assert.equal(unreadable.ok, false);
+    assert.equal(unreadable.indeterminate, true, "an unrecognized 200 body must be indeterminate");
+
+    // 4. Pending/review/failed statuses are provider-known dispositions.
+    for (const status of ["pending", "review", "failed"]) {
+      globalThis.fetch = (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ refund_id: `rf_${status}`, status }),
+        text: async () => "",
+      })) as unknown as typeof fetch;
+      const res = await provider.refundPayment({ paymentId: `pay_${status}`, reason: "stale", idempotencyKey: `k_${status}` });
+      assert.equal(res.ok, false);
+      assert.equal(res.status, status);
+      assert.notEqual(res.indeterminate, true, `${status} is a recognized status`);
+    }
+  } finally {
+    globalThis.fetch = realFetch;
+    restoreEnv(snap);
+  }
+});
+
+// The refund idempotency key must be a pure function of (provider, paymentId):
+// no attempt token, no timestamp. If it changes between attempts, a timeout
+// followed by a retry double-refunds.
+test("refund idempotency keys are deterministic per payment", () => {
+  assert.equal(refundIdempotencyKey("dodo", "pay_x"), "dodo:pay_x");
+  assert.equal(refundIdempotencyKey("dodo", "pay_x"), refundIdempotencyKey("dodo", "pay_x"));
+  assert.notEqual(refundIdempotencyKey("dodo", "pay_x"), refundIdempotencyKey("dodo", "pay_y"));
+  assert.notEqual(refundIdempotencyKey("dodo", "pay_x"), refundIdempotencyKey("stripe", "pay_x"));
+});
+
+// Refund execution must pin to the event's OWNING provider. Selecting the
+// env-configured provider instead would misdirect a refund after a
+// Dodo<->Stripe or test<->live switch.
+test("getProviderForEvent resolves the event's provider, not the configured one", () => {
+  const snap = snapshotEnv();
+  try {
+    process.env.DODO_PAYMENTS_API_KEY = "dodo-key";
+    process.env.STRIPE_SECRET_KEY = "sk_test_stripe";
+    assert.equal(getProviderForEvent("dodo").name, "dodo");
+    assert.equal(getProviderForEvent("stripe").name, "stripe");
+    assert.equal(getProviderForEvent("demo").name, "demo");
+    assert.equal(getPaymentProvider().name, "dodo", "env default still prefers Dodo");
+  } finally {
     restoreEnv(snap);
   }
 });
@@ -237,7 +335,7 @@ test("dodo refund does not treat pending provider work as a completed refund", a
       json: async () => ({ refund_id: "rf_pending", status: "pending" }),
       text: async () => "",
     })) as unknown as typeof fetch;
-    const result = await new DodoPaymentsProvider().refundPayment("pay_pending", "stale_quote");
+    const result = await new DodoPaymentsProvider().refundPayment({ paymentId: "pay_pending", reason: "stale_quote", idempotencyKey: "claim-pending-1" });
     assert.equal(result.ok, false);
     assert.equal(result.status, "pending");
     assert.match(result.error ?? "", /pending/);

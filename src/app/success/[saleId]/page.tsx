@@ -13,13 +13,15 @@ type Params = { params: Promise<{ saleId: string }> };
 async function load(saleId: string) {
   const sale = await getSale(saleId);
   if (!sale) return null;
-  const current = await getDomainState(sale.domain);
-  return { sale, current };
-}
-
-async function getDomainState(domain: string) {
-  const { getDomain } = await import("@/lib/repo");
-  return getDomain(domain);
+  const { getDomainForDisplay, isDomainReserved } = await import("@/lib/repo");
+  // Reserved means the STATIC blocklist AND the operator-managed
+  // reserved_domains table, exactly as the domain page computes it. Checking
+  // only evaluateDomain() left a DB-reserved tag's receipt saying "anyone can
+  // take it" while /domain/<tag> said operator-reserved. Display reads are
+  // tolerant; the strict money read (getDomain) throws for reserved tags.
+  const unavailable = await isDomainReserved(sale.domain);
+  const current = unavailable ? null : await getDomainForDisplay(sale.domain);
+  return { sale, current, unavailable };
 }
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
@@ -66,8 +68,8 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
     );
   }
 
-  const { sale, current } = data;
-  const stillHolder = current?.holderUserId === sale.buyerUserId;
+  const { sale, current, unavailable } = data;
+  const stillHolder = !unavailable && current?.holderUserId === sale.buyerUserId;
   const next = quoteFor({
     domain: sale.domain,
     holder: current?.holderHandle ?? null,
@@ -98,6 +100,11 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
           <p className="small" style={{ margin: 0 }}>
             Next challenge price: <span className="money money-up">{money(next.nextPriceCents)}</span>
           </p>
+        ) : unavailable ? (
+          <p className="small muted" style={{ margin: 0 }}>
+            This tag was reserved by the operator after it changed hands and cannot be claimed
+            again. Your receipt is preserved in the ledger.
+          </p>
         ) : (
           <p className="small field-error" style={{ margin: 0 }}>
             Someone already took this tag for {money(current?.priceCents ?? 0)}. Your receipt is
@@ -115,8 +122,10 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
 
       <section className="notice">
         <strong>What just happened?</strong> You paid for temporary symbolic holder status on this
-        website&apos;s price tag for {sale.domain}. The previous holder received nothing. Anyone can
-        take the tag from you by paying {money(next.nextPriceCents)}.
+        website&apos;s price tag for {sale.domain}. The previous holder received nothing.{" "}
+        {unavailable
+          ? "The tag was later reserved by the operator and can no longer be challenged."
+          : `Anyone can take the tag from you by paying ${money(next.nextPriceCents)}.`}
       </section>
 
       <div className="row-split">

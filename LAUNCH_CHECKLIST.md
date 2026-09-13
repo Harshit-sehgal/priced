@@ -12,6 +12,12 @@ One authoritative progress file (§41). Statuses are strict:
 
 Nothing is marked beyond the level actually evidenced.
 
+Active beta hosting (2026-09-12): Cloudflare Worker `priced` at
+`https://priced.harshit10sehgal.workers.dev`. The Vercel project and
+`https://internet-price-tag.vercel.app` are rollback/reference only. Older
+Vercel references below describe the prior deployment unless superseded by
+`INTEGRATION_NOW.md`.
+
 ## Product
 
 | Item | Status | Evidence |
@@ -21,7 +27,7 @@ Nothing is marked beyond the level actually evidenced.
 | Takeover flow: quote (5-min TTL) → confirm → checkout → atomic finalization | CI verified | `tests/integration/*`, `tests/browser/loop.spec.ts` |
 | Success receipt + share artifacts (X, copy, native share, `?via=` attribution) | CI verified | `tests/browser/loop.spec.ts`, `og.spec.ts` |
 | Priced branding everywhere public | CI verified | `tests/browser/brand.spec.ts` asserts the old name is absent from every surface |
-| UI/device review at 375/430/768/laptop/large | Locally verified (375/430/768 via CI) | `tests/browser/responsive.spec.ts`; real-device eyeball pass remains owner |
+| UI/device review at 375/430/768/laptop/large | CI verified for the 375/430/768 viewports; real-device check Owner blocked | `tests/browser/responsive.spec.ts`; a real-device eyeball pass remains owner work |
 | OG cards (domain + receipt, Priced branded, prev holder + next price) | CI verified as routes | PNG rendering + headers asserted in `og.spec.ts`; X card validator check is owner-gated |
 
 ## Market correctness (money)
@@ -47,12 +53,13 @@ Nothing is marked beyond the level actually evidenced.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Supabase project + migrations + auth + Realtime + backups | Staging verified; Owner/provider blocked only for managed backups | Existing Priced project and hosted-hardening migrations are the source of truth; Site URL and `/auth/callback` are configured, Google login reaches the welcome flow, `@harshit` is saved, and `/api/health?check=db` is healthy. A live two-session Realtime market update is verified. On 2026-09-11, hosted schema and data dumps were restored into isolated PostgreSQL 17 with 3 domains, 3 sales, 2 profiles, 97 analytics events, and 5 payment events. The real Supabase REST/service-role harness also passed all 8 tests. Supabase Free Plan does not include managed project backups; PITR remains off. See `INTEGRATION_NOW.md`. |
+| Supabase project + migrations + auth + Realtime + backups | Staging verified; Owner/provider blocked only for managed backups | Existing Priced project and hosted-hardening migrations are the source of truth; Site URL and `/auth/callback` are configured, Google login reaches the welcome flow, `@harshit` is saved, and `/api/health?check=db` is healthy. A live two-session Realtime market update is verified. On 2026-09-11, hosted schema and data dumps were restored into isolated PostgreSQL 17 with 3 domains, 3 sales, 2 profiles, 97 analytics events, and 5 payment events. The real Supabase REST/service-role harness also passed all 8 tests. On 2026-09-13 the role privilege model was made explicit (`20260913000004`: discovery reads, money/moderation DENY, service_role DML, profiles column-only, `pg_temp` pinned on all SECURITY DEFINER functions) and applied to hosted with a live privilege query. Supabase Free Plan does not include managed project backups; PITR remains off. See `INTEGRATION_NOW.md`. |
 | Real-Postgres RPC concurrency (10 + 25 racers) | Staging verified | Using an authenticated Supabase CLI database login and bounded PostgreSQL pool, hosted 10-way first-claim concurrency produced exactly 1 `OK`/9 `STALE_QUOTE`, and hosted 25-way held-domain concurrency produced exactly 1 `OK`/24 `STALE_QUOTE`; final states were version 1/price 500/sales 1 and version 2/price 1000/sales 2. The real REST/service-role `tests/integration/postgres.finalize.test.ts` harness also passed all 8 tests with the protected key held transiently in memory. Test rows were removed. |
-| Upstash Redis + distributed rate limits | Staging verified | Free-tier database `priced-beta-redis` is created in the new Upstash account (`us-west-1`); REST URL/token are configured only in Vercel Production and the Redis-enabled deployment is Ready. A clean concurrent hosted run verified handle user/IP `5/15`, profile user `10`, quote user/IP/domain/user+domain `30/60/30/8`, and checkout user/IP `20/30`: the next request in each burst returned `429 rate_limited` with no 5xx. Disposable Auth users, profiles, and quotes were removed; existing `promptpay-staging-redis` was left untouched. |
+| Upstash Redis + distributed rate limits | Staging verified | Free-tier database `priced-beta-redis` is created in the new Upstash account (`us-west-1`); REST URL/token are configured only in the active Cloudflare Worker. A clean concurrent hosted run verified handle user/IP `5/15`, profile user `10`, quote user/IP/domain/user+domain `30/60/30/8`, and checkout user/IP `20/30`: the next request in each burst returned `429 rate_limited` with no 5xx. Disposable Auth users, profiles, and quotes were removed; existing `promptpay-staging-redis` was left untouched. |
+| Cloudflare Worker beta deployment | Staging verified | Worker `priced` serves the stable beta origin; health, Supabase, Redis, Google Auth, Dodo Test Mode checkout/webhook, profile, analytics, share, and routing checks pass. On 2026-09-13 a stale artifact (prerendered pages 500ing with OpenNext's static-to-dynamic error, client bundle missing the inlined public Supabase env) was repaired and redeployed: all public HTML routes return 200, custom 404 renders, health/db/redis/origin are green, and the 10-check smoke passes (including every public HTML route). |
 | Vercel project rename `internet-price-tag` → `priced` | Implemented | Existing project renamed through the authenticated Vercel CLI; project id preserved and production alias remains `https://internet-price-tag.vercel.app` |
-| Env separation (Local/Preview/Production) | Implemented | Matrix in `.env.example`; Supabase and Dodo Test Mode credentials are configured only in Vercel Production, while ordinary previews remain secret-free/demo-only. |
-| Monitoring/alerts (error-event list, uptime, 5xx rate) | Implemented (docs + structured logs + free uptime workflow); External provider blocked for Vercel Hobby log-drain controls | DEPLOY.md §8: exact log-drain queries + uptime endpoints. `.github/workflows/staging-health.yml` checks liveness and Supabase readiness every 15 minutes. Vercel Hobby shows `Add Drain`, `Add Rule`, and `Add Webhook` disabled; no paid upgrade or external monitoring service was authorized. |
+| Env separation (Local/Preview/Production) | Implemented | Matrix in `.env.example`; active Cloudflare Worker holds beta secrets, while ordinary previews remain secret-free/demo-only. |
+| Monitoring/alerts (error-event list, uptime, 5xx rate) | Implemented (docs + structured logs + free uptime workflow); Owner blocked for persistent error alert routing | DEPLOY.md §8: exact event queries + uptime endpoints. `.github/workflows/staging-health.yml` checks Cloudflare liveness, Supabase readiness, Redis readiness, origin config, and every public HTML route every 15 minutes; Cloudflare live tail is available for diagnostics. A persistent error-alert destination still needs owner selection. |
 | Health endpoint (liveness + `?check=db` readiness) | CI verified | `tests/integration/health-analytics.test.ts` + CI smoke step |
 
 ## Holder value layer
@@ -75,14 +82,14 @@ Nothing is marked beyond the level actually evidenced.
 | Open-redirect guards (callback, welcome, handle) | CI verified | `src/lib/navigation.ts`, `tests/integration/navigation.test.ts`, `tests/integration/cta.test.ts`; external, scheme-relative, encoded-separator, and dot-segment traversal cases are covered |
 | JSON-only CSRF guards on all money/identity routes | CI verified | health-analytics tests assert 415; routes enumerated in security review |
 | Security headers (HSTS, nosniff, DENY, referrer, permissions) and direct RPC denial | Staging verified | Production header check confirms HSTS, `nosniff`, `DENY`, strict referrer, and permissions headers; anonymous Supabase REST calls to `finalize_takeover` and `holder_analytics` both returned HTTP 401. |
-| Priced Credits OFF (no read/write path, no UI) | Verified by absence | `grep credit_ledger src/` → no request path; flag unset everywhere |
-| Analytics privacy (PII strip, no raw webhook bodies, retention doc) | CI verified + documented | route tests; DEPLOY.md §9 retention |
+| Priced Credits OFF (no read/write path, no UI, no flag) | Verified by absence | `grep credit_ledger src/` → no request path; `grep PRICED_CREDITS src/` → no flag exists (docs/CREDITS.md marks it planned) |
+| Analytics privacy (PII strip, no raw webhook bodies, retention ENFORCEMENT) | Code CI verified; Enforcement owner blocked | Route tests; `prune_analytics_events` + daily workflow exist, but the job only runs from the default branch with repo secrets `SUPABASE_PROJECT_URL`/`SUPABASE_SERVICE_ROLE_KEY` — until then the 180-day privacy claim is not enforced. DEPLOY.md §9, BACKLOG D5 |
 
 ## Trust
 
 | Item | Status |
 |---|---|
-| Terms/Privacy/Refunds copy (plain-language, non-ownership distinction) | Implemented; professional review Owner blocked (DEPLOY.md Lane D1) |
+| Terms/Privacy/Refunds copy (plain-language, non-ownership distinction) | Implemented; professional review Owner blocked (BACKLOG.md D1) |
 | Dodo product-classification confirmation | Implemented (owner-confirmed; see `AGENTS.md` and `INTEGRATION_NOW.md`) |
 
 ## Documentation
@@ -90,7 +97,7 @@ Nothing is marked beyond the level actually evidenced.
 | Item | Status |
 |---|---|
 | PROJECT_BLUEPRINT reflects reality (current state, not plan) | Implemented (this pass) |
-| DEPLOY runbooks (incl. Vercel rename, alerts, retention) | Implemented |
+| DEPLOY runbooks (Cloudflare deploy/build env trap, alerts, retention, operator refunds) | Implemented |
 | BACKLOG aligned with this file | Implemented |
 | `.env.example` full audit + environment matrix | Implemented |
 | No `[ ]` items describing existing features | Implemented |

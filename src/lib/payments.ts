@@ -19,6 +19,15 @@ export type RefundResult = {
   status?: RefundProviderStatus;
   refundId?: string;
   error?: string;
+  /**
+   * True when the provider's disposition is UNKNOWN: the request may have been
+   * executed before a timeout/network failure, or the response body was
+   * unreadable. Callers must NOT retry automatically — the refund ledger parks
+   * it for manual reconciliation. This matters on providers without a
+   * documented request idempotency key (Dodo), where a retry after a
+   * timeout-after-success would refund twice.
+   */
+  indeterminate?: boolean;
 };
 
 export type WebhookVerification = { ok: true; event: ProviderEvent } | { ok: false; reason: string };
@@ -122,9 +131,24 @@ export type WebhookVerifyHeaders = {
 export type RefundRequest = {
   paymentId: string;
   reason: string;
-  /** Idempotency scope: one ledger claim maps to one provider refund call. */
+  /** Idempotency scope: one logical refund intent maps to one provider key. */
   idempotencyKey: string;
 };
+
+/**
+ * The deterministic idempotency key for one payment's refund intent.
+ *
+ * WHY deterministic and per-payment: the refund ledger mints a fresh claim
+ * token on every granted attempt, so keying on the token defeats idempotency
+ * across retries — a timeout-after-success followed by a retry would mint a
+ * fresh provider key and double-refund. Per Dodo's contract ("one key per
+ * logical intent, reused across retries"), every attempt for one payment
+ * shares this key and converges at the provider. Exported so the invariant is
+ * unit-tested instead of living as an inline template literal.
+ */
+export function refundIdempotencyKey(provider: string, paymentId: string): string {
+  return `${provider}:${paymentId}`;
+}
 
 export interface PaymentProvider {
   readonly name: string;
@@ -560,40 +584,49 @@ export class DodoPaymentsProvider implements PaymentProvider {
   }
 
   async refundPayment(request: RefundRequest): Promise<RefundResult> {
+    // Timeout is load-bearing here too: an abort is INDETERMINATE (the
+    // provider may have executed), so the caller must keep the ledger
+    // lease / manual-review path, never treat it as a clean "not done".
+    //
+    // Dodo does not document an `Idempotency-Key` request header for
+    // POST /refunds (unlike the webhook contract), so an automatic retry
+    // after a timeout could refund twice. Every outcome where the request may
+    // have been executed is returned with `indeterminate: true`, which the
+    // ledger turns into a terminal manual-review — never a retry.
+    let res: Response;
     try {
-      // Timeout is load-bearing here too: an abort is INDTERMINATE (the
-      // provider may have executed), so the caller must keep the ledger
-      // lease / manual-review path, never treat it as a clean "not done".
-      const res = await fetch(`${this.baseUrl}/refunds`, {
+      res = await fetch(`${this.baseUrl}/refunds`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
-          // A timeout-after-success at the provider must not double-refund on
-          // retry: the same ledger claim replays the same key.
-          "Idempotency-Key": `refund:${request.idempotencyKey}`,
         },
         signal: AbortSignal.timeout(15_000),
         body: JSON.stringify({ payment_id: request.paymentId, reason: request.reason.slice(0, 500) }),
       });
-      if (!res.ok) {
-        const detail = await res.text().catch(() => "");
-        return { ok: false, error: `dodo refund http ${res.status}: ${detail.slice(0, 300)}` };
-      }
-      const body = (await res.json().catch(() => null)) as {
-        status?: unknown;
-        refund_id?: unknown;
-      } | null;
-      const status = body?.status;
-      const refundId = typeof body?.refund_id === "string" ? body.refund_id : undefined;
-      if (status === "succeeded") return { ok: true, status, refundId };
-      if (status === "pending" || status === "review" || status === "failed") {
-        return { ok: false, status, refundId, error: `dodo refund status: ${status}` };
-      }
-      return { ok: false, error: "dodo refund response missing a recognized status" };
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      return { ok: false, indeterminate: true, error: e instanceof Error ? e.message : String(e) };
     }
+    if (!res.ok) {
+      // The provider answered with an error status: nothing was refunded.
+      const detail = await res.text().catch(() => "");
+      return { ok: false, error: `dodo refund http ${res.status}: ${detail.slice(0, 300)}` };
+    }
+    let body: { status?: unknown; refund_id?: unknown } | null = null;
+    try {
+      body = (await res.json()) as { status?: unknown; refund_id?: unknown };
+    } catch {
+      body = null;
+    }
+    const status = body?.status;
+    const refundId = typeof body?.refund_id === "string" ? body.refund_id : undefined;
+    if (status === "succeeded") return { ok: true, status, refundId };
+    if (status === "pending" || status === "review" || status === "failed") {
+      return { ok: false, status, refundId, error: `dodo refund status: ${status}` };
+    }
+    // HTTP 200 with an unrecognized body: the refund may well have been
+    // accepted, so treat it as indeterminate rather than retryable.
+    return { ok: false, indeterminate: true, error: "dodo refund response missing a recognized status" };
   }
 }
 
@@ -931,6 +964,17 @@ export function getConfiguredProviderName(): "dodo" | "stripe" | "demo" {
   if (process.env.DODO_PAYMENTS_API_KEY) return "dodo";
   if (process.env.STRIPE_SECRET_KEY) return "stripe";
   return "demo";
+}
+
+/**
+ * True when the configured payment provider and the configured datastore
+ * agree. A real provider requires the production datastore; the demo provider
+ * must never run against it. When they disagree the deployment is
+ * misconfigured, and getPaymentProvider() would throw a 500 — callers check
+ * this first so the failure is a clean 503 with no provider call attempted.
+ */
+export function isPaymentConfigConsistent(): boolean {
+  return (getConfiguredProviderName() !== "demo") === isProdDatastore;
 }
 
 /**

@@ -87,6 +87,17 @@ const OPS = [
   "ops_unsuspend_user(text, text)",
 ];
 
+// Every privileged RPC, not just the operator toolkit: a SECURITY DEFINER
+// function added later must be locked down in the same migration that creates
+// it, and a test that does not enumerate it is how one slips through.
+const MONEY_RPCS = [
+  "finalize_takeover(text, uuid, text, bigint, bigint, text)",
+  "holder_analytics(text, timestamptz)",
+  "claim_refund_attempt(text, text, text, text, bigint, integer, integer)",
+  "reconcile_refund_event(text, text, text, text, bigint, text)",
+  "prune_analytics_events(interval, integer)",
+];
+
 test("the toolkit is actually installed by the migrations", { skip: !hasDocker }, async () => {
   const { rows } = await client.query(
     `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -126,6 +137,76 @@ test("anon and authenticated cannot read the audit trail", { skip: !hasDocker },
       [role],
     );
     assert.equal(rows[0].can, false, `${role} must not read admin_audit`);
+  }
+});
+
+// Privileged RPCs, enumerated explicitly: each must be service_role-only.
+// Adding a new SECURITY DEFINER function without a revoke is the default
+// Postgres behavior, so this list has to grow with the schema.
+test("every privileged RPC is closed to client roles", { skip: !hasDocker }, async () => {
+  for (const sig of MONEY_RPCS) {
+    for (const role of ["anon", "authenticated", "public"]) {
+      const { rows } = await client.query(`select has_function_privilege($1, $2, 'execute') as can`, [
+        role,
+        `public.${sig}`,
+      ]);
+      assert.equal(rows[0].can, false, `${role} must NOT execute ${sig}`);
+    }
+    const { rows: svc } = await client.query(`select has_function_privilege('service_role', $1, 'execute') as can`, [
+      `public.${sig}`,
+    ]);
+    assert.equal(svc[0].can, true, `service_role must execute ${sig}`);
+  }
+});
+
+// The privilege model must not depend on the Supabase baseline. This harness
+// creates the roles with NO privileges, so every grant asserted here comes
+// from the migrations themselves (20260913000004_role_grants.sql).
+test("role grants are self-contained: server role can read, clients are denied money tables", { skip: !hasDocker }, async () => {
+  const cases: Array<{ role: string; table: string; can: boolean }> = [
+    // Discovery tables stay publicly readable (Realtime and anon reads).
+    { role: "anon", table: "public.domains", can: true },
+    { role: "anon", table: "public.sales", can: true },
+    { role: "authenticated", table: "public.domains", can: true },
+    // Money/moderation tables are denied on top of RLS.
+    { role: "anon", table: "public.payment_events", can: false },
+    { role: "anon", table: "public.refunds", can: false },
+    { role: "anon", table: "public.payment_disputes", can: false },
+    { role: "anon", table: "public.reserved_domains", can: false },
+    { role: "anon", table: "public.credit_ledger", can: false },
+    { role: "authenticated", table: "public.payment_events", can: false },
+    // The server client reads and writes every app table directly.
+    { role: "service_role", table: "public.domains", can: true },
+    { role: "service_role", table: "public.sales", can: true },
+    { role: "service_role", table: "public.profiles", can: true },
+    { role: "service_role", table: "public.quotes", can: true },
+    { role: "service_role", table: "public.payment_events", can: true },
+    { role: "service_role", table: "public.refunds", can: true },
+    { role: "service_role", table: "public.admin_audit", can: true },
+  ];
+  for (const c of cases) {
+    const { rows } = await client.query("select has_table_privilege($1, $2, 'select') as can", [c.role, c.table]);
+    assert.equal(rows[0].can, c.can, `${c.role} select ${c.table}`);
+  }
+
+  const schemaUsage = await client.query("select has_schema_privilege('anon', 'public', 'usage') as can");
+  assert.equal(schemaUsage.rows[0].can, true, "anon needs USAGE on public to read anything");
+
+  // profiles keeps COLUMN-level privacy: no table-level SELECT, no
+  // suspended_at column, even though the table exists and is readable.
+  const profileTable = await client.query("select has_table_privilege('anon', 'public.profiles', 'select') as can");
+  assert.equal(profileTable.rows[0].can, false, "anon must not have table-level SELECT on profiles");
+  const suspended = await client.query("select has_column_privilege('anon', 'public.profiles', 'suspended_at', 'select') as can");
+  assert.equal(suspended.rows[0].can, false, "moderation state must stay private");
+
+  // Both remaining SECURITY DEFINER functions pin pg_temp as well.
+  for (const fn of ["finalize_takeover", "holder_analytics"]) {
+    const { rows } = await client.query("select proconfig from pg_proc where proname = $1", [fn]);
+    const config = (rows[0]?.proconfig ?? []) as string[];
+    assert.ok(
+      config.some((c) => c.startsWith("search_path=") && c.includes("pg_temp")),
+      `${fn} must pin search_path with pg_temp, got ${JSON.stringify(config)}`,
+    );
   }
 });
 

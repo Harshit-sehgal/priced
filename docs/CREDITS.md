@@ -1,10 +1,11 @@
 # Priced Credits — specification (V1, INACTIVE)
 
-Status: **designed, not active.** The feature flag `PRICED_CREDITS_ENABLED`
-defaults to off. Nothing in checkout, payment handling, receipts, refunds, or
-accounting reads or writes credits while the flag is off. This document is
-the contract the implementation must satisfy before the flag can ever be
-turned on.
+Status: **designed, not active.** Credits are off because no code path, UI,
+or feature flag exists yet — `PRICED_CREDITS_ENABLED` is a planned name, not a
+variable anything reads today (grep-verify: `PRICED_CREDITS` matches no source
+file). Nothing in checkout, payment handling, receipts, refunds, or accounting
+reads or writes credits. This document is the contract the implementation must
+satisfy before any flag can exist.
 
 ## What credits are
 
@@ -130,9 +131,10 @@ alter table public.credit_ledger enable row level security;
 -- no policies: service-role only
 ```
 
-## Flag
+## Flag (planned)
 
-`PRICED_CREDITS_ENABLED` (env, default unset = off). While off:
+`PRICED_CREDITS_ENABLED` (env, default unset = off) is the planned toggle; it
+does not exist in code yet. While credits are off:
 - no read or write of `credit_ledger` anywhere in request paths,
 - no UI mentions credits,
 - this document is the only artifact.

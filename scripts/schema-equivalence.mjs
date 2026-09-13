@@ -77,6 +77,7 @@ async function preamble(pool) {
 async function applyMigrations(pool) {
   const dir = new URL("../supabase/migrations/", import.meta.url);
   const files = (await readdir(dir)).filter((f) => f.endsWith(".sql")).sort();
+  if (files.length === 0) throw new Error("no migrations found under supabase/migrations/");
   for (const f of files) await pool.query(await readFile(new URL(f, dir), "utf8"));
   return files.length;
 }
@@ -86,7 +87,18 @@ async function applyPortable(pool) {
   // it as the operator correction procedure. It was previously outside this
   // check, which is exactly why admin_audit and every ops_* function silently
   // existed in no database at all.
+  //
+  // The list is ordered because a sorted glob would apply patch files before
+  // the tables they alter. To stop a NEW db/*.sql from silently escaping this
+  // check ("equal by omission"), every file in db/ must be accounted for:
+  // either applied here or explicitly listed as legacy.
+  const LEGACY = ["migration-quotes-checkout.sql"];
   const files = ["schema.sql", "schema-extended.sql", "ops.sql"];
+  const present = (await readdir(new URL("../db/", import.meta.url))).filter((f) => f.endsWith(".sql"));
+  const unaccounted = present.filter((f) => !files.includes(f) && !LEGACY.includes(f));
+  if (unaccounted.length > 0) {
+    throw new Error(`db/${unaccounted.join(", db/")} is neither applied nor declared legacy — update scripts/schema-equivalence.mjs`);
+  }
   for (const f of files) {
     await pool.query(await readFile(new URL(`../db/${f}`, import.meta.url), "utf8"));
   }
@@ -148,7 +160,7 @@ const FUNCTION_ACL_SQL = `
 const RLS_SQL = `
   select c.relname, c.relrowsecurity, c.relforcerowsecurity
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
-  where n.nspname = 'public' and c.relkind = 'r'
+  where n.nspname = 'public' and c.relkind in ('r', 'p')
   order by 1`;
 
 const POLICY_SQL = `
@@ -161,12 +173,49 @@ const PUBLICATION_SQL = `
   select pubname, schemaname, tablename
   from pg_publication_tables order by 1, 2, 3`;
 
+// The dimensions the first version of this checker missed: a trigger, view,
+// materialized view or sequence added to one source only used to be invisible
+// ("PASS"), which for a money-path gate is a false pass waiting to happen.
+const TRIGGERS_SQL = `
+  select c.relname, t.tgname, pg_get_triggerdef(t.oid) as def
+  from pg_trigger t
+  join pg_class c on c.oid = t.tgrelid
+  join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and not t.tgisinternal
+  order by 1, 2`;
+
+const VIEWS_SQL = `
+  select schemaname, viewname, definition
+  from pg_views where schemaname = 'public'
+  order by 1, 2`;
+
+const SEQUENCES_SQL = `
+  select sequence_name, data_type, start_value, minimum_value, maximum_value, increment
+  from information_schema.sequences
+  where sequence_schema = 'public'
+  order by 1`;
+
+/**
+ * String literals are semantic in SQL — `raise exception 'STALE_QUOTE'` is a
+ * contract — but collapsing whitespace inside a function body or policy
+ * expression would hide a changed literal. Extract them (outside comments) and
+ * fingerprint them separately so a body that normalizes equal but means
+ * something different still fails.
+ */
+function sqlLiterals(text) {
+  const withoutComments = text
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ");
+  return (withoutComments.match(/'(?:[^']|'')*'/g) ?? []).sort().join("\u0001");
+}
+
 async function fingerprint(pool) {
-  const [cols, cons, idx, fns, tacl, cacl, facl, rls, pol, pub] = await Promise.all([
+  const [cols, cons, idx, fns, tacl, cacl, facl, rls, pol, pub, trg, views, seqs] = await Promise.all([
     pool.query(COLUMNS_SQL), pool.query(CONSTRAINTS_SQL),
     pool.query(INDEXES_SQL), pool.query(FUNCTIONS_SQL),
     pool.query(TABLE_ACL_SQL), pool.query(COLUMN_ACL_SQL), pool.query(FUNCTION_ACL_SQL),
     pool.query(RLS_SQL), pool.query(POLICY_SQL), pool.query(PUBLICATION_SQL),
+    pool.query(TRIGGERS_SQL), pool.query(VIEWS_SQL), pool.query(SEQUENCES_SQL),
   ]);
   return {
     columns: cols.rows.map((r) => `${r.table_name}.${r.column_name} ${r.data_type} null=${r.is_nullable} default=${r.column_default ?? ""}`),
@@ -174,13 +223,16 @@ async function fingerprint(pool) {
     indexes: idx.rows.map((r) => `${r.tablename} ${r.indexname} ${r.indexdef}`),
     // Normalise whitespace: formatting differences between the two files are
     // not drift, but a changed statement inside a body absolutely is.
-    functions: fns.rows.map((r) => `${r.proname} :: ${r.def.replace(/\s+/g, " ").trim()}`),
+    functions: fns.rows.map((r) => `${r.proname} :: ${r.def.replace(/\s+/g, " ").trim()} :: literals=${sqlLiterals(r.def)}`),
     "table grants": tacl.rows.map((r) => `${r.table_name} ${r.grantee} ${r.privilege_type}`),
     "column grants": cacl.rows.map((r) => `${r.table_name}.${r.column_name} ${r.grantee} ${r.privilege_type}`),
     "function grants": facl.rows.map((r) => `${r.proname} ${r.rolname} execute=${r.can_execute}`),
     "row level security": rls.rows.map((r) => `${r.relname} rls=${r.relrowsecurity} forced=${r.relforcerowsecurity}`),
-    policies: pol.rows.map((r) => `${r.tablename} ${r.policyname} ${r.permissive} ${r.roles} ${r.cmd} using=${r.qual.replace(/\s+/g, " ")} check=${r.with_check.replace(/\s+/g, " ")}`),
+    policies: pol.rows.map((r) => `${r.tablename} ${r.policyname} ${r.permissive} ${r.roles} ${r.cmd} using=${r.qual.replace(/\s+/g, " ")} check=${r.with_check.replace(/\s+/g, " ")} :: literals=${sqlLiterals(r.qual + r.with_check)}`),
     "realtime publication": pub.rows.map((r) => `${r.pubname} ${r.schemaname}.${r.tablename}`),
+    triggers: trg.rows.map((r) => `${r.relname} ${r.tgname} ${r.def.replace(/\s+/g, " ").trim()} :: literals=${sqlLiterals(r.def)}`),
+    views: views.rows.map((r) => `${r.schemaname}.${r.viewname} ${r.definition.replace(/\s+/g, " ").trim()} :: literals=${sqlLiterals(r.definition)}`),
+    sequences: seqs.rows.map((r) => `${r.sequence_name} ${r.data_type} start=${r.start_value} min=${r.minimum_value} max=${r.maximum_value} inc=${r.increment}`),
   };
 }
 

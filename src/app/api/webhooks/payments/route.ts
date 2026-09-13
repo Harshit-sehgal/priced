@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { getPaymentEvent, isProdDatastore, recordPaymentEvent, markPaymentEventStatus, reconcileRefundProviderEvent } from "@/lib/repo";
-import { expectedSettlementCurrency, getConfiguredProviderName, getPaymentProvider, recordPaymentDispute } from "@/lib/payments";
+import { getPaymentEvent, recordPaymentEvent, markPaymentEventStatus, reconcileRefundProviderEvent } from "@/lib/repo";
+import { expectedSettlementCurrency, getPaymentProvider, isPaymentConfigConsistent, parseStaleWebhookEvent, recordPaymentDispute } from "@/lib/payments";
 import { processSucceededPayment } from "@/lib/takeover";
+import { isStaleInProgress } from "@/lib/webhook-retry";
 import { logEvent } from "@/lib/logger";
 import { isUniqueViolation } from "@/lib/db-errors";
 
@@ -28,8 +29,10 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: Request) {
   // A real provider must never be allowed to finalize against the in-memory
-  // adapter if a deployment is missing either Supabase production variable.
-  if (getConfiguredProviderName() !== "demo" && !isProdDatastore) {
+  // adapter, and the demo provider must never run against the production
+  // datastore (getPaymentProvider() throws for that combination, turning every
+  // delivery into a 500). A mismatch is a deployment error: clean 503.
+  if (!isPaymentConfigConsistent()) {
     return Response.json({ error: "payment_datastore_not_configured", retryable: false }, { status: 503 });
   }
 
@@ -51,12 +54,34 @@ export async function POST(req: Request) {
     webhookId: req.headers.get("webhook-id"),
     webhookTimestamp: req.headers.get("webhook-timestamp"),
   });
-  if (!verification.ok) {
+  // A stale-but-signed delivery carries a cryptographically valid event older
+  // than the freshness window. Verification reports it as a failure, but the
+  // event inside is still parseable and must flow through the money pipeline
+  // (not a 400 drop): processSucceededPayment disposes of it via
+  // amount/version checks or the refund ledger.
+  let event;
+  if (verification.ok) {
+    event = verification.event;
+  } else if (verification.reason === "stale_timestamp") {
+    const stale = parseStaleWebhookEvent(provider.name, raw, signature, {
+      webhookId: req.headers.get("webhook-id"),
+      webhookTimestamp: req.headers.get("webhook-timestamp"),
+    });
+    if (!stale.ok) {
+      logEvent("webhook_signature_invalid", "warn", { provider: provider.name, reason: verification.reason });
+      return Response.json({ error: "invalid_signature", reason: verification.reason }, { status: 400 });
+    }
+    logEvent("webhook_stale_but_signed", "warn", {
+      provider: provider.name,
+      event_id: stale.event.id,
+      event_type: stale.event.type,
+      payment_id: stale.event.paymentId,
+    });
+    event = stale.event;
+  } else {
     logEvent("webhook_signature_invalid", "warn", { provider: provider.name, reason: verification.reason });
     return Response.json({ error: "invalid_signature", reason: verification.reason }, { status: 400 });
   }
-
-  const event = verification.event;
 
   // Event-level idempotency: duplicate deliveries are recorded once.
   // ONLY a unique violation means "already seen". Any other DB error is a
@@ -96,16 +121,32 @@ export async function POST(req: Request) {
         return Response.json({ received: true, duplicate: true });
       }
       if (existing.status === "received") {
-        // The first delivery is still processing. Acknowledge this concurrent
-        // duplicate so it cannot run the same refund/finalize operation twice.
-        logEvent("webhook_duplicate_in_progress", "info", { provider: provider.name, event_id: event.id });
-        return Response.json({ received: true, duplicate: true, inProgress: true });
-      }
-      if (existing.status !== "error") {
+        // The first delivery is still processing — UNLESS its row is stale,
+        // in which case the first delivery died (or its terminal status write
+        // failed) and this redelivery must re-enter processing. The provider
+        // timeout is ~15s; 15 minutes means the first attempt is definitively
+        // gone, and re-processing is safe because finalize/refund are both
+        // idempotent and serialized per payment.
+        if (isStaleInProgress(existing.processedAt)) {
+          logEvent("webhook_retry_stale_received", "warn", {
+            provider: provider.name,
+            event_id: event.id,
+            payment_id: event.paymentId,
+            processed_at: existing.processedAt,
+          });
+          // fall through to normal processing
+        } else {
+          // Acknowledge this concurrent duplicate so it cannot run the same
+          // refund/finalize operation twice.
+          logEvent("webhook_duplicate_in_progress", "info", { provider: provider.name, event_id: event.id });
+          return Response.json({ received: true, duplicate: true, inProgress: true });
+        }
+      } else if (existing.status !== "error") {
         logEvent("webhook_duplicate_unknown_status", "error", { provider: provider.name, event_id: event.id, status: existing.status });
         return Response.json({ error: "duplicate_status_invalid", retryable: true }, { status: 500 });
+      } else {
+        logEvent("webhook_retry_event", "info", { provider: provider.name, event_id: event.id });
       }
-      logEvent("webhook_retry_event", "info", { provider: provider.name, event_id: event.id });
     } catch (lookupError) {
       logEvent("webhook_duplicate_lookup_failed", "error", {
         provider: provider.name,
@@ -180,7 +221,13 @@ export async function POST(req: Request) {
   // second refund.
   if (event.status === "refunded") {
     try {
-      await reconcileRefundProviderEvent({
+      // Reconcile returns whether a SALE already exists, evaluated under the
+      // same per-payment lock as the ledger write. A provider refund event for
+      // a payment that funded a sale is a provider-side contradiction (e.g. a
+      // dashboard refund after the takeover): record it — never silently drop
+      // it — alert loudly, and do NOT auto-reverse the takeover (owner
+      // decision).
+      const { saleExists } = await reconcileRefundProviderEvent({
         provider: provider.name,
         paymentId: event.paymentId,
         eventId: event.id,
@@ -188,6 +235,14 @@ export async function POST(req: Request) {
         amountCents: event.amountCents,
         error: event.type === "refund.failed" ? "provider_refund_failed" : undefined,
       });
+      if (saleExists) {
+        logEvent("refund_after_sale", "error", {
+          provider: provider.name,
+          event_id: event.id,
+          event_type: event.type,
+          payment_id: event.paymentId,
+        });
+      }
       await markPaymentEventStatus(provider.name, event.id, "ignored", event.type);
     } catch (e) {
       logEvent("refund_event_reconcile_failed", "error", {
@@ -320,6 +375,22 @@ export async function POST(req: Request) {
       // money in a non-deterministic state → 500 so the provider retries and
       // the next delivery re-attempts finalize + refund.
       if (!result.refunded) {
+        if (result.reason === "PAYMENT_ALREADY_REFUNDED") {
+          // One payment id = one outcome: the database refused the sale because
+          // a refund intent already exists. Refunding again would be wrong and
+          // retrying would loop forever. Ack, alert; the refund ledger owns it.
+          logEvent("webhook_payment_already_refunded", "error", {
+            provider: provider.name,
+            event_id: event.id,
+            payment_id: event.paymentId,
+          });
+          try {
+            await markPaymentEventStatus(provider.name, event.id, "ignored", result.reason);
+          } catch {
+            return Response.json({ error: "store_failed", retryable: true }, { status: 500 });
+          }
+          return Response.json({ received: true, result });
+        }
         if (result.manualReview) {
           // The refund ledger has exhausted safe automatic attempts (or lost
           // certainty after a provider/database ambiguity). Acknowledge the

@@ -35,3 +35,21 @@ export function sanitizeInternalPath(value: string | null | undefined): string {
     return "/";
   }
 }
+
+/**
+ * Percent-decode a route parameter without throwing.
+ *
+ * A raw `%` (or any malformed escape) makes `decodeURIComponent` throw a
+ * URIError, which surfaces as an unauthenticated 500 on every public
+ * `/domain/[domain]` and `/u/[handle]` request that contains one — trivial
+ * error spam and monitoring noise. Leaving the malformed value intact is safe:
+ * every caller validates the result (evaluateDomain / isHandleValid) and
+ * rejects it as malformed.
+ */
+export function safeDecodeURIComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}

@@ -15,6 +15,8 @@ import {
   withinLocalTelemetryBudget,
   resetTelemetryBudgetForTests,
   shouldCountView,
+  evictTelemetryBuckets,
+  MAX_LOCAL_TELEMETRY_BUCKETS,
   TELEMETRY_LOCAL_LIMIT,
   TELEMETRY_GLOBAL_LIMIT,
 } from "../../src/lib/view-events.ts";
@@ -115,4 +117,46 @@ test("an over-budget client does not consume the global allowance", () => {
     if (withinLocalTelemetryBudget("view", `10.1.${Math.floor(i / 250)}.${i % 250}`)) others++;
   }
   assert.equal(others, TELEMETRY_GLOBAL_LIMIT - TELEMETRY_LOCAL_LIMIT);
+});
+
+// The map bound used to be `buckets.clear()`, which reset the instance-wide
+// counter as well — so a multi-window flood of distinct clients could buy a
+// fresh global allowance every time the map overflowed, defeating the one tier
+// that bounds total Redis spend. Eviction must drop per-client buckets while
+// leaving the global counter intact.
+test("bucket eviction preserves the global counter", () => {
+  const now = Date.now();
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+  for (let i = 0; i < MAX_LOCAL_TELEMETRY_BUCKETS + 1; i++) {
+    buckets.set(`view:ip-${i}`, { count: 1, resetAt: now + 60_000 });
+  }
+  buckets.set("view:__all__", { count: 1_234, resetAt: now + 60_000 });
+  buckets.set("analytics:__all__", { count: 77, resetAt: now + 60_000 });
+
+  evictTelemetryBuckets(buckets, now);
+
+  assert.ok(buckets.size <= MAX_LOCAL_TELEMETRY_BUCKETS, "map must be bounded");
+  assert.equal(buckets.get("view:__all__")?.count, 1_234, "the checked dimension's global tier must survive");
+  assert.equal(buckets.get("analytics:__all__")?.count, 77, "every other dimension's global tier survives too");
+});
+
+test("bucket eviction prefers expired entries over live ones", () => {
+  const now = Date.now();
+  const buckets = new Map<string, { count: number; resetAt: number }>();
+  for (let i = 0; i < MAX_LOCAL_TELEMETRY_BUCKETS; i++) {
+    buckets.set(`view:expired-${i}`, { count: 1, resetAt: now - 1 });
+  }
+  for (let i = 0; i < 10; i++) {
+    buckets.set(`view:live-${i}`, { count: 1, resetAt: now + 60_000 });
+  }
+  buckets.set("view:__all__", { count: 7, resetAt: now + 60_000 });
+
+  evictTelemetryBuckets(buckets, now);
+
+  // All expired entries were removed and every live one survived.
+  for (let i = 0; i < 10; i++) {
+    assert.equal(buckets.has(`view:live-${i}`), true, `live-${i} should survive`);
+  }
+  assert.equal(buckets.has("view:expired-0"), false, "expired entries go first");
+  assert.equal(buckets.get("view:__all__")?.count, 7);
 });

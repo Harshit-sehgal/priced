@@ -55,6 +55,27 @@ test("health: ?check=db in demo mode reports the demo datastore, still ok", asyn
   assert.equal(body.ok, true);
 });
 
+// Deep checks touch shared free-tier resources and this route is unauthenticated
+// and proxy-exempt. Caching makes request volume unable to multiply upstream
+// calls: two rapid probes must return the identical cached body (same ts).
+test("health: deep checks are cached against anonymous loops", async () => {
+  const first = (await readBody(await healthGET(new Request("http://localhost/api/health?check=db")))) as Record<string, unknown>;
+  await new Promise((r) => setTimeout(r, 25));
+  const second = (await readBody(await healthGET(new Request("http://localhost/api/health?check=db")))) as Record<string, unknown>;
+  assert.equal(second.ts, first.ts, "the second deep probe must reuse the cached result");
+});
+
+// The cache must be keyed per check type: a cross-key leak would serve the db
+// body to a redis probe (or vice versa), hiding a real dependency outage.
+test("health: cache entries do not cross check types", async () => {
+  const db = (await readBody(await healthGET(new Request("http://localhost/api/health?check=db")))) as Record<string, unknown>;
+  const redis = (await readBody(await healthGET(new Request("http://localhost/api/health?check=redis")))) as Record<string, unknown>;
+  assert.ok("datastore" in db, "db probe reports the datastore");
+  assert.ok(!("redis" in db), "db probe must not carry the redis verdict");
+  assert.ok("redis" in redis, "redis probe reports the redis verdict");
+  assert.ok(!("datastore" in redis), "redis probe must not carry the datastore verdict");
+});
+
 // ---------------------------------------------------------- /api/analytics
 test("analytics: accepts a valid event", async () => {
   const res = (await analyticsPOST(jsonRequest({ event: "homepage_viewed", props: { ref: "x" } }))) as StubResponse;

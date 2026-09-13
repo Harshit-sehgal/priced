@@ -33,9 +33,22 @@ export const DEFAULT_RECENT_SALES_LIMIT = 20;
 export const MARKET_VALUE_SAMPLE_LIMIT = 1000;
 export const CONTESTED_SALES_SAMPLE_LIMIT = 2000;
 
-/** Id-shaped lookup guard: a malformed id is "not found", never a datastore error. */
+/**
+ * Id-shaped lookup guard: a malformed id is "not found", never a datastore
+ * error.
+ *
+ * STRICT canonical UUID. The previous `^[0-9a-f-]{36}$` admitted strings that
+ * pass the length/charset but are not valid UUIDs (36 dashes, 36 zeros), and
+ * the Supabase adapter then sent them to `uuid = '----'` — an invalid-input
+ * syntax error that surfaced as an unauthenticated 500 on /takeover/<id>,
+ * /success/<id>, /checkout/return?quote_id=, and both OG image routes. Our
+ * ids are always canonical gen_random_uuid() output, so anything else is
+ * "not found" before any query is made.
+ */
+const CANONICAL_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function isIdShaped(value: string): boolean {
-  return /^[0-9a-f-]{36}$/i.test(value);
+  return CANONICAL_UUID_RE.test(value);
 }
 
 export type ContestedCounts = Map<string, { count: number; latest: string }>;

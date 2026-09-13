@@ -19,7 +19,7 @@ Priced Credits remain disabled.
 1. Use Dodo Test Mode first.
 2. Create or reuse the approved Single Payment product with Pay What You Want enabled and a minimum price of $5.
 3. Set the Dodo test API key, product id, mode, and webhook signing key in the designated staging environment only.
-4. Configure the signed webhook endpoint at `https://<stable-staging-origin>/api/webhooks/payments`.
+4. Configure the signed webhook endpoint at the active beta origin: `https://priced.harshit10sehgal.workers.dev/api/webhooks/payments` (Cloudflare Worker `priced`; Vercel is rollback-only). A future custom domain replaces this value in both Dodo and Supabase.
 5. Subscribe to `payment.succeeded`, `payment.failed`, `payment.cancelled`, `refund.succeeded`, `refund.failed`, and all supported `dispute.*` lifecycle events used by the implementation; verify the names and payload fields against the current Dodo documentation.
 6. Run real signed Test Mode transactions. Do not substitute unsigned mocks for the final webhook verification.
 7. Verify successful payment, failed payment, cancellation, duplicate webhook, stale quote, wrong amount, simultaneous challengers, automatic stale-payment refund, refund failure, webhook retry, missing metadata, and provider outage behavior.

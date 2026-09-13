@@ -40,7 +40,13 @@ export async function POST(req: Request) {
   try {
     const raw = await req.text();
     if (raw.length > 4_096) return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
-    const body = JSON.parse(raw || "{}") as { domain?: string };
+    const body = JSON.parse(raw || "{}") as { domain?: unknown };
+    // Type-check BEFORE normalizeDomain: a non-string shape (number/object)
+    // used to throw `input.trim is not a function` outside the error mapping,
+    // surfacing as an unauthenticated 500 instead of a 400.
+    if (typeof body.domain !== "string") {
+      return NextResponse.json({ error: "domain_required" }, { status: 400 });
+    }
     domain = body.domain;
   } catch {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });

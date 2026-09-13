@@ -68,3 +68,14 @@ export function validateBio(raw: unknown): { ok: true; bio: string | null } | { 
   if (bio.length > BIO_MAX) return { ok: false, reason: "bio_too_long" };
   return { ok: true, bio: bio || null };
 }
+
+/**
+ * Moderation visibility: a suspended profile is hidden, so its outbound CTA
+ * must be hidden everywhere the profile is otherwise linked — otherwise the
+ * suspension is half-applied and a moderated account keeps a live link on
+ * every tag it still holds. The handle itself stays visible (holdings are
+ * ledger truth).
+ */
+export function holderCtaVisible(profile: { suspendedAt: string | null } | null | undefined): boolean {
+  return Boolean(profile && !profile.suspendedAt);
+}

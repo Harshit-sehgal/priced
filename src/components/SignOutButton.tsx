@@ -17,7 +17,7 @@ export function SignOutButton() {
       } catch {
         // Demo mode or unconfigured auth — server route still clears cookies.
       }
-      await fetch("/api/auth/signout", { method: "POST" }).catch(() => {});
+      await fetch("/api/auth/signout", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {});
     } finally {
       setBusy(false);
       router.push("/");

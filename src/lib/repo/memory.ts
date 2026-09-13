@@ -6,7 +6,7 @@
 // behaviour production never applies. Where a branch below mirrors a database
 // constraint or the SQL finalizer, the comment says so — keep them in step.
 import "server-only";
-import { quoteFor } from "../game.ts";
+import { normalizeDomain, quoteFor } from "../game.ts";
 import { requireEligibleDomain } from "../domains.ts";
 import {
   CONTESTED_SALES_SAMPLE_LIMIT,
@@ -90,6 +90,12 @@ export function resetMemoryMarket(): void {
 // ------------------------------------------------------------------- reads
 export async function getDomain(domain: string): Promise<RepoDomain | null> {
   const d = requireEligibleDomain(domain);
+  return mem().domains.get(d) ?? null;
+}
+
+export async function getDomainForDisplay(domain: string): Promise<RepoDomain | null> {
+  const d = normalizeDomain(domain);
+  if (!d) return null;
   return mem().domains.get(d) ?? null;
 }
 
@@ -190,16 +196,42 @@ export async function listRecentSales(limit = DEFAULT_RECENT_SALES_LIMIT): Promi
 }
 
 export async function listSalesForDomain(domain: string, limit = DEFAULT_SALES_LIMIT): Promise<RepoSale[]> {
-  const d = requireEligibleDomain(domain);
+  // Display-only; mirrors the Supabase adapter by tolerating reserved domains
+  // so immutable history still renders after a blocklist expansion.
+  const d = normalizeDomain(domain);
+  if (!d) return [];
   return mem()
     .sales.filter((s) => s.domain === d)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, limit);
 }
 
+/** Every live tag held by one handle, price DESC. */
+export async function listDomainsForHolder(handle: string): Promise<RepoDomain[]> {
+  const h = handle.toLowerCase().replace(/^@/, "");
+  return [...mem().domains.values()]
+    .filter((d) => d.holderUserId && d.holderHandle === h)
+    .sort((a, b) => b.priceCents - a.priceCents);
+}
+
 export async function getSale(saleId: string): Promise<RepoSale | null> {
   if (!isIdShaped(saleId)) return null;
   return mem().sales.find((s) => s.id === saleId) ?? null;
+}
+
+export async function getSaleByProviderPaymentId(providerPaymentId: string): Promise<RepoSale | null> {
+  if (!providerPaymentId) return null;
+  return mem().sales.find((s) => s.providerPaymentId === providerPaymentId) ?? null;
+}
+
+/** Which of these handles are suspended, in one pass. */
+export async function listSuspendedHandles(handles: string[]): Promise<Set<string>> {
+  const wanted = new Set(handles.map((h) => h.toLowerCase().replace(/^@/, "")).filter(Boolean));
+  const suspended = new Set<string>();
+  for (const p of mem().profiles.values()) {
+    if (p.suspendedAt && wanted.has(p.handle)) suspended.add(p.handle);
+  }
+  return suspended;
 }
 
 export async function getProfileByHandle(handle: string): Promise<RepoProfile | null> {
@@ -265,7 +297,10 @@ export async function getQuote(quoteId: string): Promise<RepoQuote | null> {
 
 export async function markQuoteStatus(quoteId: string, status: RepoQuote["status"]): Promise<void> {
   const q = mem().quotes.get(quoteId);
-  if (q) q.status = status;
+  if (!q) return;
+  // Mirrors the Supabase guard: consumed is terminal, never downgraded.
+  if (q.status === "consumed" && status !== "consumed") return;
+  q.status = status;
 }
 
 /**
@@ -301,6 +336,25 @@ export async function setQuoteCheckout(args: {
 export async function finalizeTakeover(input: FinalizeInput): Promise<TakeoverOutcome> {
   // In-memory mirror of db/schema.sql finalize_takeover, with the same codes.
   const m = mem();
+  // Mirror the SQL input validation: empty identifiers must never materialize
+  // rows the SQL side would reject with INVALID_*.
+  if (
+    !input.domain?.trim() ||
+    !input.buyerUserId?.trim() ||
+    !input.buyerHandle?.trim() ||
+    !input.providerPaymentId?.trim()
+  ) {
+    return { ok: false, code: "FINALIZE_ERROR" };
+  }
+  // One payment id, one outcome: a LIVE refund intent blocks a sale, matching
+  // the SQL advisory-lock exclusion. A definitively `failed` refund does not
+  // block (the provider answered and no money moved), so a later correct
+  // payment can still fund the sale.
+  for (const refund of m.refunds.values()) {
+    if (refund.providerPaymentId === input.providerPaymentId && refund.status !== "failed") {
+      return { ok: false, code: "PAYMENT_ALREADY_REFUNDED" };
+    }
+  }
   const existing = m.sales.find((s) => s.providerPaymentId === input.providerPaymentId);
   if (existing) {
     if (existing.domain !== input.domain || existing.buyerUserId !== input.buyerUserId || existing.priceCents !== input.paidCents) {
@@ -432,6 +486,7 @@ export async function getPaymentEvent(provider: string, providerEventId: string)
   providerPaymentId: string;
   eventType: string;
   status: string;
+  processedAt: string | null;
 } | null> {
   const ev = mem().paymentEvents.get(`${provider}:${providerEventId}`);
   if (!ev) return null;
@@ -441,6 +496,7 @@ export async function getPaymentEvent(provider: string, providerEventId: string)
     providerPaymentId: ev.providerPaymentId,
     eventType: ev.eventType,
     status: ev.status,
+    processedAt: ev.createdAt,
   };
 }
 
@@ -458,6 +514,17 @@ export async function claimRefundAttempt(args: {
   reason: string;
   amountCents: number | null;
 }): Promise<RefundClaim> {
+  // Mirrors claim_refund_attempt's cross-check: a payment that already funded
+  // a sale is never refundable. No refunds row is created for this verdict.
+  if (mem().sales.some((s) => s.providerPaymentId === args.paymentId)) {
+    return {
+      claimed: false,
+      status: "already_finalized",
+      attempts: 0,
+      claimToken: null,
+      lastError: "sale_exists: payment already funded a takeover",
+    };
+  }
   const now = Date.now();
   const key = `${args.provider}:${args.paymentId}`;
   const existing = mem().refunds.get(key);
@@ -559,12 +626,15 @@ export async function reconcileRefundProviderEvent(args: {
   status: Extract<RepoRefundStatus, "succeeded" | "manual_review">;
   amountCents?: number | null;
   error?: string;
-}): Promise<void> {
+}): Promise<{ saleExists: boolean }> {
   const now = new Date().toISOString();
   const key = `${args.provider}:${args.paymentId}`;
+  // Single-threaded here, so evaluating the verdict with the write is atomic
+  // by construction (the SQL version takes the advisory lock).
+  const saleExists = mem().sales.some((s) => s.providerPaymentId === args.paymentId);
 
   const existing = mem().refunds.get(key);
-  if (existing?.status === "succeeded") return;
+  if (existing?.status === "succeeded") return { saleExists };
   if (existing) {
     existing.status = args.status;
     existing.providerEventId = args.eventId;
@@ -574,7 +644,7 @@ export async function reconcileRefundProviderEvent(args: {
     existing.lastError = args.error ?? null;
     existing.updatedAt = now;
     existing.completedAt = now;
-    return;
+    return { saleExists };
   }
 
   mem().refunds.set(key, {
@@ -592,6 +662,7 @@ export async function reconcileRefundProviderEvent(args: {
     updatedAt: now,
     completedAt: now,
   });
+  return { saleExists };
 }
 
 export async function isReservedInDb(domain: string): Promise<boolean> {
@@ -604,6 +675,12 @@ export async function isDomainReserved(domain: string): Promise<boolean> {
   const { evaluateDomain } = await import("../domains.ts");
   if (evaluateDomain(domain).reason === "reserved") return true;
   return isReservedInDb(domain);
+}
+
+export async function listReservedDomains(): Promise<Set<string>> {
+  // No operator blocklist without a database; the static list is applied by
+  // dropReservedRows/filterOutReserved at every call site.
+  return new Set<string>();
 }
 
 // ------------------------------------------------------- demo seeding (non-prod)

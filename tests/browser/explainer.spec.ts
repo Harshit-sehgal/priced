@@ -45,7 +45,7 @@ test.describe("explainer and legal pages", () => {
   // what separates a joke from a claim of ownership. It must survive on every
   // page, not only where someone remembered to add it.
   test("every page carries the 'not the actual domain' disclaimer", async ({ page }) => {
-    for (const path of ["/", "/about", "/terms", "/domain/openai.com"]) {
+    for (const path of ["/", "/about", "/terms", "/privacy", "/refunds", "/login", "/domain/openai.com"]) {
       await page.goto(path);
       await expect(
         page.getByText(/not the actual domain/i).first(),

@@ -2,6 +2,310 @@
 
 This file is the current authority for the next execution phase and overrides older wording that treats Dodo product eligibility as unresolved.
 
+## Active beta hosting update (2026-09-12)
+
+The designated free-tier beta origin is now Cloudflare Workers:
+`https://priced.harshit10sehgal.workers.dev`. The `priced` Worker is deployed
+with the existing Supabase project, Dodo Test Mode, and free Upstash Redis
+credentials. Supabase Site URL/redirect configuration and the Dodo Test Mode
+webhook endpoint point to this origin. The Vercel project and its
+`https://internet-price-tag.vercel.app` alias are retained as rollback/reference
+only; older Vercel-specific entries below are historical evidence from the
+previous beta deployment.
+
+Cloudflare verification completed: the liveness, Supabase readiness, and Redis
+readiness endpoints return healthy; Google-authenticated holder pages render;
+a real Dodo Test Mode success payment showed the `$5.00` market amount plus
+`$0.90` GST, delivered a signed `payment.succeeded` webhook with HTTP 200,
+consumed the quote exactly once, created the immutable sale, updated the
+holder/profile/analytics surfaces, and exposed the share card. A declined
+Test Mode payment also returned through the failed-payment path without
+creating a sale. The Cloudflare staging smoke suite passes all 10 checks,
+including the custom 404 route after the static-to-dynamic fix.
+
+## Cloudflare repair + second money-path hardening (2026-09-13)
+
+The active beta was serving a stale artifact whose public HTML pages all
+returned 500: `/login`, `/welcome`, `/checkout/mock`, `/about`, `/terms`,
+`/privacy`, `/refunds` failed with OpenNext's "Page changed from static to
+dynamic at runtime, reason: cookies" — the session-refresh proxy runs on every
+matched route, and a statically prerendered page cannot go dynamic at request
+time. Every HTML route now renders dynamically (client pages moved behind
+server wrappers with `export const dynamic = "force-dynamic"`; the remaining
+legal/marketing pages set the same segment config). The Worker was then rebuilt
+**with the public `NEXT_PUBLIC_*` values exported at build time** — runtime
+Worker secrets never reach the browser bundle — and redeployed. Live
+verification after the redeploy: all seven pages 200, custom 404 renders,
+health/db/redis/origin green, and the 10-check staging smoke passes.
+
+Money-path hardening (CI verified: typecheck + lint + 210 tests + build +
+`cf:build` + real-Postgres suite; needs hosted re-verification):
+
+- A succeeded payment now resolves its provider payment id against the sales
+  ledger BEFORE any refund branch, so a duplicate delivery cannot refund a
+  funded sale when the quote was flipped terminal by a losing challenger or
+  the buyer was suspended/removed since purchase.
+- Refund reconciliation cannot downgrade a settled refund
+  (`status <> 'succeeded'`), pinned by a forced-interleaving Postgres test with
+  a negative control.
+- `consumed` quotes are terminal in both adapters.
+- A duplicate-key race on `sales.provider_payment_id` maps to
+  IDEMPOTENCY_CONFLICT (alert, no refund), never a refundable FINALIZE_ERROR.
+- `/api/market/pulse` always returns a real fingerprint (client
+  Realtime-vs-polling is a build-time decision; the server's runtime env can
+  disagree, which silently froze live refresh).
+- Malformed percent-encoding no longer 500s `/domain/[domain]` or
+  `/u/[handle]`; reserved-domain OG images render; the profile route has the
+  same 4 KiB payload cap as every other mutating route.
+
+Details: `BACKLOG.md` Lane C3.
+
+### Second hardening wave (2026-09-13)
+
+CI verified (typecheck + lint + 218 tests + build + 15-migration real-Postgres
+suite + schema equivalence). Hosted migrations applied and verified via the
+authenticated Supabase CLI:
+
+- The hosted database was MISSING the operator moderation toolkit
+  (`admin_audit` plus `ops_reserve_domain`, `ops_unreserve_domain`,
+  `ops_suspend_user`, `ops_unsuspend_user`) even though `db/ops.sql` is the
+  documented takedown/suspension procedure. `20260913000001_operator_tooling.sql`
+  is now applied to the hosted project; a live privilege query confirms
+  `anon`/`authenticated` cannot execute the functions or read the audit table
+  while `service_role` can.
+- `20260913000002` makes every `finalize_takeover` comparison NULL-proof
+  (`x <> NULL` is NULL, which an `if` treats as false, so a NULL argument
+  skipped the staleness, price, and idempotency guards). Applied to hosted.
+- `20260913000003` adds `domains(holder_handle, price_cents desc)` and
+  `sales(created_at desc)` indexes for the holder profile and activity feed.
+  Applied to hosted.
+- `isIdShaped` now requires a canonical UUID. A 36-character non-UUID (all
+  dashes/zeros) passed the old charset check and reached `uuid = '----'`,
+  which surfaced as unauthenticated 500s on `/takeover/<id>`, `/success/<id>`,
+  `/checkout/return?quote_id=`, and both OG image routes.
+- The holder profile no longer scans `listMarket(1000)` — it queries the
+  holder's tags directly, which also stops "Currently held" from silently
+  truncating beyond the market cap.
+- Sitemap reserved filtering is one cached blocklist read instead of up to 500
+  per-domain queries.
+- Telemetry budget overflow evicts per-client buckets instead of clearing the
+  map, which used to reset the instance-wide counter and hand a multi-window
+  flood a fresh global allowance.
+- `updateProfileExtras` uses `maybeSingle`, so a user with no profile row gets
+  `profile_missing` (404) instead of a thrown PGRST116 (500).
+- Proxy matcher subtree exclusions are properly anchored, and both the
+  scheduled health workflow and the smoke suite now check every public HTML
+  route (the outage above was invisible to all previous checks).
+- The hosted project's CLI migration history predates the canonical filenames
+  (early applies were recorded under other versions), so `supabase db push`
+  refuses and must not be history-repaired blindly. New migrations are applied
+  one file at a time with `supabase db query --linked --file` and then
+  privilege-verified; `DEPLOY.md §1` documents this.
+
+Details: `BACKLOG.md` Lane C4.
+
+### Third wave — display reads + payment config (2026-09-13)
+
+CI verified (typecheck + lint + 221 tests + build + real-Postgres + schema
+equivalence + 117 browser tests). Redeployed to the beta (version `1360612b`); live smoke 10/10 and the reserved/malformed OG cards render PNGs.
+
+- Display reads are separated from the money gates: `getDomainForDisplay` and
+  `listSalesForDomain` normalize instead of requiring eligibility, so a domain
+  added to the operator blocklist AFTER it sold still renders its receipt and
+  immutable ledger. The strict `getDomain` throws for reserved tags, which
+  would have 500'd `/success/<id>` and its OG card and hidden the ledger.
+- `isPaymentConfigConsistent()` makes the provider/datastore guard symmetric:
+  the demo provider against the production datastore used to throw from
+  `getPaymentProvider()` (500) on checkout and webhooks instead of the
+  intended clean 503.
+- A suspended holder's outbound CTA is suppressed on tag pages
+  (`holderCtaVisible`): suspension already hid the profile page, so a live CTA
+  on every tag they still held left the moderation action half-applied.
+- Browser coverage for reserved and malformed-percent OG cards; README and
+  `.env.example` refreshed off the pre-Cloudflare state.
+
+Details: `BACKLOG.md` Lane C5.
+
+### Fourth wave — full-file re-audit (2026-09-13)
+
+CI verified: typecheck + lint + 238 tests + build + 26 real-Postgres tests +
+strengthened schema equivalence + 119 browser tests (120 total, 1 skipped).
+Hosted migrations `20260913000004`/`20260913000005` applied and
+privilege-verified. Beta redeployed and live smoke 10/10 with all public
+routes green.
+
+
+
+- **Input validation:** `POST /api/quotes` threw `input.trim is not a function`
+  (unauthenticated 500) for a non-string `domain`; now a 400, with route tests.
+- **Shared-resource abuse:** `/api/health?check=db|redis` is unauthenticated and
+  proxy-exempt; an anonymous loop could burn the shared Upstash quota that the
+  fail-closed rate limiter depends on. Deep-check results are now cached for
+  30s and `ts` identity is tested.
+- **Self-contained privileges:** migration `20260913000004` writes the role
+  model down explicitly (schema USAGE, discovery SELECT, money/moderation
+  DENY, service_role DML, profiles column-only) instead of assuming the
+  Supabase baseline. Applied to hosted and verified there; a new pg test proves
+  the model on a database with no baseline, mutation-tested. `finalize_takeover`
+  and `holder_analytics` now pin `search_path = public, pg_temp` like the other
+  RPCs.
+- **Verifier hardening:** `schema-equivalence.mjs` now fingerprints triggers,
+  views, sequences and partitioned-table RLS; fingerprints string literals
+  separately from whitespace-normalised bodies (a whitespace-obscured literal
+  change used to pass); and fails when a `db/*.sql` file is neither applied nor
+  declared legacy. Both mutations verified to fail the gate.
+- **Money-path tests that were not testing what they named:** the local
+  `IDEMPOTENCY_CONFLICT` pg test now actually conflicts (same payment id,
+  different args); the forced interleaves assert the loser is still blocked
+  before commit; the 25-way held-domain race asserts 24 stale losers; the HTTP
+  race harness asserts every loser's refund completed (`refunded === true`)
+  instead of printing "no money lost" for a stuck refund; the refund
+  idempotency key and event-provider pinning have assertions; buyer-suspended
+  after purchase is now a regression case; and the webhook ROUTE has HTTP-level
+  tests (success, duplicate, bad signature, oversized, missing metadata,
+  failed event).
+- **Moderation/display:** suspended profiles are noindexed and excluded from the
+  sitemap; a suspended holder's CTA no longer renders on tags they hold;
+  receipts and their OG cards honour the DB blocklist like the domain page
+  does.
+- **Honest UI:** removed the structurally-always-zero "unique sessions" metric
+  and per-domain "unique"; labeled truncated holder lists; renamed the
+  "Most contested tag" stat to what it actually measures; homepage total is
+  labeled as a top-1,000 sample; terminal quotes no longer say "Finalizing…".
+- **Failure handling:** login (magic link) and welcome fetch errors can no
+  longer leave a permanently disabled button with no message; share-copy
+  failures surface; demo checkout guards NaN amounts and network errors;
+  quote errors are keyed off the response code, not a status that made two
+  messages dead.
+- **Promises vs code:** Terms §7 promises a refund when a held tag is reserved;
+  the Refund Policy now states the same, and `db/ops.sql` + `DEPLOY.md §7`
+  document the operator's manual query → provider refund → audited reservation
+  procedure. Analytics retention enforcement is documented honestly
+  (`DEPLOY.md §9`) with the owner step tracked as `BACKLOG.md` D5.
+- **Docs/tooling:** CI asserts exactly 422 (not just "non-2xx") and bounds the
+  job; the smoke suite's unknown-route probe is fatal; `.dev.vars*` and
+  `worker-configuration.d.ts` are gitignored; Node `engines` pinned;
+  `tests/pg` is now type-checked; BRANCH_PROTECTION, PROJECT_BLUEPRINT and the
+  free-tier handoff docs were refreshed off the Vercel-active state.
+
+A second re-audit pass of the changed files found more, and one deployment
+incident:
+
+- The domain OG card computed `reserved` from the static list only, so a
+  DB-reserved tag still unfurled as claimable ("held by @x · $42 · TAKE IT")
+  while `/domain/<tag>` said operator-reserved. It now consults
+  `isDomainReserved` and renders "—" / "not a priced tag" for every ineligible
+  input instead of advertising a $5 claim.
+- The sitemap's new suspended-handle lookup threw on any profiles error,
+  turning `/sitemap.xml` into a 500 for every crawler; it is now chunked
+  (200 handles/query) and lenient like the reserved display cache, with a
+  memory-adapter regression test.
+- `client-ip.ts`'s IPv6 check accepted colon-garbage (`1:2:3`, `abc:def`);
+  replaced with real IPv6/IPv4-mapped validation and a corpus test.
+- Telemetry eviction preserved only the checked dimension's global counter and
+  could reset the other dimension's allowance; it now preserves every
+  `*:__all__` bucket.
+- The `23505` finalize mapping is constrained to the
+  `sales.provider_payment_id` constraint (a blanket code arm would misclassify
+  a future unique constraint as alert-only and skip a refund);
+  `reconcileRefundProviderEvent` now writes `provider_event_id` on the
+  existing-row path to match the memory adapter.
+- UI/CSS: the bio textarea now shares the input styling (16px — iOS zoom),
+  the history ledger's desktop grid has five tracks for five cells, and
+  `.btn-block` wraps long share labels instead of hard-clipping them.
+- Browser coverage strengthened: CSP probe checks HTTP status (a 500 no longer
+  passes vacuously), the analytics privacy test targets a real non-owned
+  seeded profile instead of a nonexistent handle, malformed-percent params are
+  exercised, and brand/legal/explainer assertions are positive, not
+  negative-only.
+
+**Build incident (resolved):** a `cf:build` run that reused a dirty `.next`
+from a differently-configured plain `npm run build` produced a Worker that
+exceeded Cloudflare's CPU limit (error 1102) on EVERY page render while
+`/api/health` and `/api/pulse` stayed green; a rollback to the prior version
+restored service immediately. A clean rebuild (`.next` + `.open-next` removed)
+deploys and serves normally. `package.json` now has a `precf:build` that wipes
+both directories before every Worker build, and `DEPLOY.md §3` documents why
+`.next` must never be shared across differently-configured builds.
+
+Details: `BACKLOG.md` Lane C6.
+
+### Fifth wave — payment-outcome exclusion + provider-indeterminacy (2026-09-13)
+
+CI verified: typecheck + lint + 251 tests + 31 real-Postgres tests + schema
+equivalence + 119 browser tests. Hosted migration `20260913000005` applied and
+verified. Beta redeployed (version `c906abf8`); live smoke 10/10, headers
+checked on matched and proxy-excluded routes.
+
+- **CRITICAL: one payment id had two possible outcomes.** `finalize_takeover`
+  consulted only `sales` and `claim_refund_attempt` only `refunds`, so a
+  payment refunded by a first event could still fund a takeover on a second
+  event id (the refund branches do not all make the quote terminal), and a
+  takeover could be refunded by a racing claim. Both now serialize on a
+  per-payment advisory lock and each refuses when the other's outcome exists:
+  finalize raises `PAYMENT_REFUNDING` (webhook acks + alerts, never refunds
+  again); claim returns `already_finalized` (no ledger row, no retry).
+  `reconcile_refund_event` moved into SQL on the same lock, so a dashboard
+  refund event can no longer insert a refund row concurrently with a
+  finalization. Proven by forced-interleaving Postgres tests in both orders
+  (mutation-verified), plus memory-mirror and route-level tests.
+- **Dodo refunds can be indeterminate.** Dodo documents no `Idempotency-Key`
+  for `POST /refunds`; a timeout/abort/network failure or an unreadable 200
+  body may have executed the refund. Those outcomes are now marked
+  `indeterminate` and the ledger parks them in `manual_review` — never an
+  automatic retry. HTTP error statuses and pending/review/failed statuses stay
+  definitive. Locked with a provider-level test matrix.
+- **A crashed webhook delivery no longer strands a payment.**
+  `payment_events.processed_at` is exposed to the duplicate handler; a
+  `received` row older than 15 minutes (the provider timeout is ~15s) re-enters
+  processing with a `webhook_retry_stale_received` alert instead of being
+  acknowledged forever.
+- The reserved-domain check inside `finalize_takeover` now runs AFTER the
+  domain row lock, so a reservation committed before the lock is always seen;
+  the memory adapter validates identifiers and enforces the same
+  refund/sale exclusion.
+- The enforced CSP moved from the session middleware to `next.config.mjs`
+  headers, so proxy-excluded routes (`/api/health`, `/api/webhooks`,
+  `/api/market/pulse`, sitemap/robots, OG images) now carry it too — verified
+  live; `x-powered-by` is disabled.
+- Docs: Track A/C statuses and the monitoring checklist no longer name Vercel
+  as current; the migrations README warns against `db push` on the existing
+  hosted project; `PRICED_CREDITS_ENABLED` is documented as a planned name
+  that does not exist in code; DEPLOY's suspension and retention wording was
+  corrected; `.env.example` gained the grace-window and base-URL matrix rows;
+  the money-path-review skill's triage snippet now uses a real path.
+
+Details: `BACKLOG.md` Lane C7.
+
+### Sixth wave — exclusion refinements (2026-09-13)
+
+CI verified: typecheck + lint + 258 tests + 35 real-Postgres tests + schema
+equivalence + 119 browser tests. Hosted migration `20260913000006` applied and
+verified. Beta redeployed (version `baae4059`); live smoke 10/10.
+
+An adversarial review of the new exclusion mechanism found two refinements:
+
+- **The refund-after-sale alert was racy.** The webhook route checked for a
+  sale BEFORE calling reconcile; a finalization committing in between made
+  `reconcile_refund_event` insert the refund row too late for the alert. The
+  verdict is now computed by the RPC under the same per-payment advisory lock
+  and returned as `(status, sale_exists)`; the route alerts on it. A
+  forced-interleaving test holds a finalize open while reconcile waits and
+  asserts the verdict sees the committed sale. Provider dashboards can still
+  refund after a sale — that cannot be prevented, only recorded and alerted
+  (the takeover is never auto-reversed).
+- **A definitively failed refund parked the payment forever.** `failed` is
+  written only after the provider answered without refunding, so a later
+  correct success event may now finalize; live intents
+  (`attempting`/`succeeded`/`manual_review`) still block, atomically on the
+  advisory lock. A status matrix test pins all four cases.
+- The skill's own catalogue gained the two defect classes this work produced:
+  "one logical payment, two outcomes" and "provider indeterminacy"
+  (`.claude/skills/money-path-review/SKILL.md`), and the C2-1 note no longer
+  claims Dodo documents a refund idempotency key.
+
+Details: `BACKLOG.md` Lane C8.
+
 ## Locked state
 
 - Product: Priced
@@ -45,6 +349,7 @@ This file is the current authority for the next execution phase and overrides ol
 - The four hosted hardening migrations from PR #53 were applied to the existing Priced Supabase project: finalize idempotency recheck, analytics retention, payment disputes, and profiles column privacy. A hosted security query confirmed the dispute table and retention index exist; `service_role` can execute the privileged functions while `anon` cannot; `service_role` can read disputes while `anon` cannot; and `anon` can read public profile fields but not `suspended_at`.
 - The stable-origin smoke suite passes all 9 checks after the deployment. Dodo’s signed Test Mode webhook Testing control sent a `payment.failed` example to the live endpoint, and Vercel recorded HTTP 200 on the current production deployment.
 - The Dodo Test Mode webhook endpoint now subscribes to all 12 required events: `payment.succeeded`, `payment.failed`, `payment.cancelled`, `refund.succeeded`, `refund.failed`, and `dispute.opened`, `dispute.challenged`, `dispute.accepted`, `dispute.cancelled`, `dispute.expired`, `dispute.won`, and `dispute.lost`.
+- Deep-scan money-path hardening (2026-09-12, CI-verified: typecheck + 178 unit tests + build green, NOT yet staging-verified): deterministic refund idempotency key per payment (`refund:<provider>:<paymentId>` shared by all attempts, per Dodo's "one key per logical intent" contract) replacing the per-attempt claim-token key that could double-refund on timeout-after-success; refund execution pinned to the event's owning provider via `getProviderForEvent` (env switches no longer misdirect refunds); `setQuoteCheckout` fallback resurrection of terminal quotes removed (throws `QUOTE_NOT_CHECKOUTABLE`, route returns 409); `AbortSignal.timeout(15_000)` on Dodo checkout/refund fetches; stale-but-signed webhook deliveries re-verified with the age gate waived (HMAC still enforced) and routed through the money pipeline with a `webhook_stale_but_signed` alert instead of a terminal 400; `x-real-ip` dropped from the trusted client-IP set with literal IPv4/IPv6 validation. Details in `BACKLOG.md` Lane C2. These need hosted verification (stale-replay, provider-mismatch, and terminal-quote races) before they count as staging-verified.
 
 ## Do not redo
 
@@ -58,13 +363,13 @@ Do not create paid infrastructure without explicit owner approval.
 
 ## Parallel integration tracks
 
-### Track A: Vercel and auth
+### Track A: Cloudflare hosting and auth (Vercel rollback/reference)
 
 1. Gain access to the existing Vercel project currently associated with `internet-price-tag`. **Implemented.**
 2. Rename it to `priced` where possible rather than creating a duplicate. **Implemented.**
 3. Ensure Git integration uses `Harshit-sehgal/priced` and `main`. **Implemented.**
-4. Establish one stable beta/staging origin. **Implemented** with `https://internet-price-tag.vercel.app`.
-5. Wire the Priced Supabase public URL/key and server-only service-role key into that designated environment. **Implemented.**
+4. Establish one stable beta/staging origin. **Implemented** — the active origin is the Cloudflare Worker `https://priced.harshit10sehgal.workers.dev`; the Vercel alias is retained for rollback only.
+5. Wire the Priced Supabase public URL/key and server-only service-role key into that designated environment (currently the Worker secrets). **Implemented.**
 6. Configure Supabase Site URL and redirects using the stable origin. **Implemented.**
 7. Configure Google OAuth as the primary beta login. **Implemented.**
 8. Verify login, OAuth callback, welcome, handle creation, logout, and repeat login. **Staging verified** with Google OAuth and the saved public handle `@harshit`.
@@ -84,9 +389,9 @@ Do not create paid infrastructure without explicit owner approval.
 ### Track C: Upstash and operational checks
 
 1. Create one free Upstash Redis database for the designated beta environment. **Implemented** (`priced-beta-redis`, Free Tier, `us-west-1`).
-2. Configure the REST URL/token only in that environment. **Implemented** in Vercel Production; the token is stored as a Secret and the URL as a Config variable.
+2. Configure the REST URL/token only in that environment. **Implemented** as Cloudflare Worker secrets on the active beta; ordinary previews remain credential-free.
 3. Verify quote, checkout, handle, user, IP, and domain rate limits across deployed instances. **Staging verified**: concurrent hosted bursts hit every configured ceiling—handle user/IP `5/15`, profile user `10`, quote user/IP/domain/user+domain `30/60/30/8`, and checkout user/IP `20/30`—with the next request returning `429 rate_limited` and no 5xx. Disposable Auth users, profiles, and quotes were removed after the run.
-4. Use free logs and free uptime checks initially. `.github/workflows/staging-health.yml` provides a free scheduled liveness/readiness check with GitHub Actions failure notifications. Vercel Hobby currently has no available Log Drain or alert-rule destination (`Add Drain`, `Add Rule`, and `Add Webhook` are disabled), so Vercel log-drain wiring remains **External provider blocked**.
+4. Use free logs and free uptime checks initially. `.github/workflows/staging-health.yml` provides a free scheduled liveness/Supabase/Redis/origin check plus every public HTML route, with GitHub Actions failure notifications. Cloudflare live tail (`npx wrangler tail priced`) is available for diagnostics; Vercel Hobby log drains were unavailable and apply only to the rollback deployment.
 5. Check `/api/health` and `/api/health?check=db`.
 6. Watch structured critical events during sandbox testing.
 
@@ -96,7 +401,7 @@ Start after Tracks A-C have usable hosted resources.
 
 1. Run the hosted REST/service-role Postgres/RPC harness against the real Priced Supabase project. **Staging verified**: the protected key was held transiently in memory and `npm run test:postgres` passed all 8 real-project tests. Direct hosted database-level RPC concurrency is also **Staging verified**: the 10- and 25-request races had exactly one winner each and all other attempts returned `STALE_QUOTE`.
 2. Run 10 and 25 simultaneous challenger races through the hosted HTTP/payment path. The ten-way run is **External provider blocked** for complete Dodo Test Mode refund closure: exactly one takeover finalized and nine stale payments were identified, but the sandbox wallet returned `INSUFFICIENT_WALLET_FUNDS` for two refunds after seven were completed. A direct dashboard refund reproduced the same wallet error. The provider-outage path is **Staging verified**: the temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, was removed, and the normal deployment was restored. The 25-way HTTP/payment race remains unrun.
-3. Run `npm run smoke:staging` against the stable beta deployment. **Staging verified** (9 checks pass).
+3. Run `npm run smoke:staging` against the stable beta deployment. **Staging verified** (10 checks pass, including every public HTML route).
 4. Verify Realtime across two sessions, including a live market update. **Staging verified** on `realtime-success-us-20260911.com`; the observer updated to `@harshit`, history, and the `$10` next price without reload.
 5. Complete the real journey: search, login, handle, quote, Dodo sandbox checkout, signed webhook, finalization, history, profile, analytics, CTA, share, and share visit. **Staging verified** for the exercised success path.
 6. Verify analytics events and holder aggregation using real sandbox activity. **Staging verified** with hosted tag, profile, and share events and non-empty holder analytics.

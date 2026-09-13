@@ -1,7 +1,18 @@
 // CTA + bio validation (§7) and /api/profile contract.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateCta, validateBio } from "../../src/lib/cta.ts";
+import { holderCtaVisible, validateCta, validateBio } from "../../src/lib/cta.ts";
+
+// Suspension hides a profile, so its outbound CTA must be hidden on every
+// surface that still links the handle (tags they hold). The handle itself
+// stays visible — holdings are ledger truth.
+test("cta: a suspended holder's CTA is not visible", () => {
+  assert.equal(holderCtaVisible(null), false);
+  assert.equal(holderCtaVisible(undefined), false);
+  assert.equal(holderCtaVisible({ suspendedAt: null }), true);
+  const suspendedAt = new Date().toISOString();
+  assert.equal(holderCtaVisible({ suspendedAt }), false);
+});
 
 test("cta: requires both label and url when either is provided", () => {
   assert.deepEqual(validateCta("Visit my site", ""), { ok: false, reason: "url_required" });

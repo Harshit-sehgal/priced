@@ -14,7 +14,7 @@ Current Supabase project callback:
 
 Create a Google OAuth client using that Supabase callback and configure the Google provider in the Priced Supabase project.
 
-After the stable Vercel beta origin is known, configure the Supabase Site URL and redirect allowlist to that application origin and verify the full callback flow.
+With the stable beta origin known (currently the Cloudflare Worker `https://priced.harshit10sehgal.workers.dev`), configure the Supabase Site URL and redirect allowlist to that application origin and verify the full callback flow. Vercel remains rollback-only.
 
 ## Magic-link limitation on the free setup
 
