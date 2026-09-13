@@ -171,7 +171,7 @@ CI verified: typecheck + lint + 258 tests + 35 pg tests + schema equivalence + 1
 | D2 | Swap Dodo **test → live** keys + webhook secret; switch `DODO_PAYMENTS_MODE=live` in Production only | owner | Keep Preview on test keys |
 | D3 | **Closed beta** with 10–20 people proving repeat competition (spec §77) | owner+verify | Watch the Cloudflare live tail (`npx wrangler tail priced`) for `takeover_succeeded`, `refund_failed`, etc. |
 | D4 | Public announcement | owner | Only after §76 gate + D1–D3 |
-| D5 | **Analytics retention enforcement** — add repo secrets `SUPABASE_PROJECT_URL` + `SUPABASE_SERVICE_ROLE_KEY` and get `.github/workflows/analytics-retention.yml` merged to the default branch | owner | Until then the privacy page's "deleted after about 180 days" claim is not enforced (the job skips cleanly). `DEPLOY.md §9` |
+| D5 | **Analytics retention enforcement** — add repo secrets `SUPABASE_PROJECT_URL` + `SUPABASE_SERVICE_ROLE_KEY` and get `.github/workflows/analytics-retention.yml` merged to the default branch | verify | **Staging verified**: secrets are configured, the workflow is merged to `main`, and manual run `34771269757` completed successfully against the hosted Supabase project (`0` expired rows deleted). `DEPLOY.md §9` |
 | D6 | **Post-sale reservation refunds** — decide whether the operator refund on a held-tag reservation becomes tooling or stays a documented manual provider refund | owner | Terms §7 promises the last payment back; `db/ops.sql` documents the manual query/refund/audit procedure. No automated money path exists by design |
 
 ## Quick start for a new agent

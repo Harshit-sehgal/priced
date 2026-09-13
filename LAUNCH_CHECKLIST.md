@@ -83,7 +83,7 @@ Vercel references below describe the prior deployment unless superseded by
 | JSON-only CSRF guards on all money/identity routes | CI verified | health-analytics tests assert 415; routes enumerated in security review |
 | Security headers (HSTS, nosniff, DENY, referrer, permissions) and direct RPC denial | Staging verified | Production header check confirms HSTS, `nosniff`, `DENY`, strict referrer, and permissions headers; anonymous Supabase REST calls to `finalize_takeover` and `holder_analytics` both returned HTTP 401. |
 | Priced Credits OFF (no read/write path, no UI, no flag) | Verified by absence | `grep credit_ledger src/` → no request path; `grep PRICED_CREDITS src/` → no flag exists (docs/CREDITS.md marks it planned) |
-| Analytics privacy (PII strip, no raw webhook bodies, retention ENFORCEMENT) | Code CI verified; Enforcement owner blocked | Route tests; `prune_analytics_events` + daily workflow exist, but the job only runs from the default branch with repo secrets `SUPABASE_PROJECT_URL`/`SUPABASE_SERVICE_ROLE_KEY` — until then the 180-day privacy claim is not enforced. DEPLOY.md §9, BACKLOG D5 |
+| Analytics privacy (PII strip, no raw webhook bodies, retention ENFORCEMENT) | Staging verified | Route tests plus the merged daily workflow; repository secrets are configured and manual run `34771269757` completed successfully against hosted Supabase (`0` expired rows deleted). DEPLOY.md §9, BACKLOG D5 |
 
 ## Trust
 
