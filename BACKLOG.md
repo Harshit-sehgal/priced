@@ -14,10 +14,11 @@ below does not identify the active beta origin.
 Latest sandbox status (2026-09-18) supersedes older matrix wording below:
 the hosted 25-payment batch completed in Dodo Test Mode with one consumed
 quote/sale, eight stale quotes, sixteen TTL-expired quotes, and 24 succeeded
-refund-ledger rows totaling `$120.00`. A strict same-version 25-way timing
-run remains **External provider blocked** because the deployed eight-per-window
-quote limiter and five-minute TTL cannot be satisfied with one signed-in
-challenger account.
+refund-ledger rows totaling `$120.00`. Four disposable authenticated
+challenger accounts have now been provisioned and 25 same-version checkout
+sessions were prepared within the existing limiter and TTL. The strict
+same-version 25-way payment run remains **External provider blocked** until
+those prepared checkouts are paid and fully reconciled.
 
 ## Lane A — Owner-gated infra (do first, blocks all real-money verification)
 
