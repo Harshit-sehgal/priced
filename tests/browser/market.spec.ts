@@ -39,8 +39,9 @@ test.describe("unclaimed domain experience", () => {
     await page.goto("/domain/figma.com");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("figma.com");
     await expect(page.getByText("Nobody holds this tag yet.")).toBeVisible();
-    await expect(page.getByText("First claim", { exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Claim for \$5/ })).toBeVisible();
+    await expect(page.getByText("Minimum first claim", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Your offer for figma.com")).toHaveValue("5.00");
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
     await expect(page.getByText("You are not buying the domain")).toBeVisible();
   });
 
@@ -62,7 +63,8 @@ test.describe("claimed domain page", () => {
     // Takeover math transparency (§11).
     await expect(page.getByText("1% of current")).toBeVisible();
     await expect(page.getByText("Minimum increase")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Take it for \$949\.40/ })).toBeVisible();
+    await expect(page.getByLabel("Your offer for openai.com")).toHaveValue("949.40");
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
     // History ledger exists (seeded demo history).
     await expect(page.getByText("Tag History")).toBeVisible();
   });
@@ -72,6 +74,6 @@ test.describe("reduced motion", () => {
   test("page is usable with animations disabled", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto("/domain/openai.com");
-    await expect(page.getByRole("button", { name: /Take it for/ })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeEnabled();
   });
 });

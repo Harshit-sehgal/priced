@@ -26,7 +26,7 @@ test.describe("OG cards", () => {
     const domain = uniqueDomain();
     await handleFor(request);
     await page.goto(`/domain/${domain}`);
-    await page.getByRole("button", { name: /Claim for \$5/ }).click();
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
     await page.getByRole("button", { name: "Continue to payment" }).click();
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
