@@ -578,8 +578,8 @@ This phase is complete only when a real hosted beta environment successfully exe
 ## Latest Dodo Test Mode capacity recheck — 2026-09-18
 
 - The authenticated Dodo dashboard still identifies the account as **Test
-  Mode**. Its Account Statement currently shows a total sandbox balance of
-  `$142.46`; the signed webhook endpoint remains enabled and its recent visible
+  Mode**. Its Account Statement now shows a total sandbox balance of
+  `$282.32`; the signed webhook endpoint remains enabled and its recent visible
   deliveries are `refund.succeeded` with HTTP 200.
 - Eight disposable `$10.00` Test Mode purchases completed through the active
   beta origin on separate `sandbox-topup-20260918-*` tags. Dodo recorded
@@ -591,9 +591,14 @@ This phase is complete only when a real hosted beta environment successfully exe
   without a submitted payment or sale; its disposable tag remains unclaimed.
 - A clean same-version 25-way timing race would create 24 stale-payment
   refunds. At the observed approximately `$6` wallet debit per completed
-  refund, that needs roughly `$144` before reserve. The gate remains
-  **External provider blocked** pending a confirmed additional sandbox
-  top-up and a controlled setup that keeps all quotes inside the five-minute
-  TTL. The deployed eight-per-window quote limiter and one signed-in
-  challenger account still prevent a clean same-version 25-way timing run;
-  those controls must not be weakened.
+  refund, that needs roughly `$144` before reserve. The current balance is
+  sufficient for that refund capacity, but the gate remains **External
+  provider blocked** until a controlled setup keeps all quotes inside the
+  five-minute TTL. The deployed eight-per-window quote limiter and one
+  signed-in challenger account still prevent a clean same-version 25-way
+  timing run; those controls must not be weakened.
+- A subsequent read-only Account Statement refresh showed a `+$177.00`
+  aggregate Test Mode payment and the balance increase to `$282.32`. This
+  confirms that the wallet-capacity hurdle has changed, but it does not count
+  as a 25-way timing result and no new race was started without the required
+  distinct signed-in challenger setup.
