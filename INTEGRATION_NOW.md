@@ -586,7 +586,9 @@ This phase is complete only when a real hosted beta environment successfully exe
   `$11.80` per India-address checkout (`$10.00` market amount plus `$1.80`
   GST), with no live-mode or real-money charge involved. A ninth checkout was
   prepared but expired/returned with `requires_payment_method`; it was not
-  submitted, and the balance remains `$142.46`.
+  submitted, and the balance remains `$142.46`. A tenth checkout was prepared
+  through the card screen and also returned with `requires_payment_method`
+  without a submitted payment or sale; its disposable tag remains unclaimed.
 - A clean same-version 25-way timing race would create 24 stale-payment
   refunds. At the observed approximately `$6` wallet debit per completed
   refund, that needs roughly `$144` before reserve. The gate remains
