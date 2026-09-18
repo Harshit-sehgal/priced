@@ -575,7 +575,6 @@ This phase is complete only when a real hosted beta environment successfully exe
 - CI remains **CI verified** for the 375/430/768 responsive viewports. A
   physical-device/browser-matrix eyeball pass remains **Owner blocked** and is
   not inferred from this hosted desktop review.
-
 ## Latest Dodo Test Mode capacity recheck — 2026-09-18
 
 - The authenticated Dodo dashboard still identifies the account as **Test
@@ -585,5 +584,3 @@ This phase is complete only when a real hosted beta environment successfully exe
 - A clean same-version 25-way timing race would create 24 stale-payment
   refunds. At the observed approximately `$6` wallet debit per completed
   refund, that needs roughly `$144` before reserve, so the gate remains
-  **External provider blocked**. No new refund-heavy race was started against
-  insufficient provider capacity; no live-mode or real-money action occurred.
