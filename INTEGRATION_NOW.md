@@ -564,3 +564,15 @@ This phase is complete only when a real hosted beta environment successfully exe
   `share_visit` and a later buyer; the current view sink intentionally stores
   anonymous share visits, so that attribution must not be inferred from a
   mere domain/time match.
+
+## Latest hosted visual/accessibility pass — 2026-09-18
+
+- The active beta origin was reviewed in the hosted desktop browser across the
+  homepage/market, About, Terms, Privacy, Refunds, login entry, a held domain,
+  holder profile, holder analytics, and the successful-takeover receipt/share
+  flow. Each route rendered with its expected headings, links, forms, actions,
+  legal disclaimer, and server-authoritative price/holder state; no concrete UI
+  defect was found. This is **Staging verified** for the hosted desktop pass.
+- CI remains **CI verified** for the 375/430/768 responsive viewports. A
+  physical-device/browser-matrix eyeball pass remains **Owner blocked** and is
+  not inferred from this hosted desktop review.
