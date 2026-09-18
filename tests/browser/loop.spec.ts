@@ -18,7 +18,7 @@ test.describe("full takeover loop (demo mode)", () => {
 
     // Server-authoritative quote confirmation page.
     await expect(page).toHaveURL(/\/takeover\//);
-    await expect(page.getByText("First claim. You set the opening price.")).toBeVisible();
+    await expect(page.getByText("First claim. You choose the opening price.")).toBeVisible();
     await expect(page.getByText("You are buying:")).toBeVisible();
 
     // Demo checkout (drives the real signed-webhook path).
