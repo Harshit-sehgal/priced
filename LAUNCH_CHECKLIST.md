@@ -153,9 +153,11 @@ eight stale quotes, and sixteen expired quotes. All 24 non-winning payment
 IDs have succeeded Dodo refund-ledger rows totaling `$120.00`; no refunded
 payment created a sale. The final legacy wallet-blocked refund was also
 completed in Dodo Test Mode, and the balance after settlement was `$64.13`.
-Seven older rows still have explicit `PAYMENT_ALREADY_REFUNDED` responses and
-no sale; they are bookkeeping-only `manual_review` rows pending signed
-provider refund events.
+At the time of this ledger snapshot, seven older rows still had explicit
+`PAYMENT_ALREADY_REFUNDED` responses and no sale. Dodo's subsequent signed
+replay of missing `refund.succeeded` events reconciled those rows; the current
+audit is recorded at the top of this checklist and returns zero unresolved
+Dodo refund rows.
 This closes the wallet-funding issue for the exercised refund set, but the
 strict same-version 25-way timing gate stays **External provider blocked**
 until 25 quotes can be paid before the five-minute TTL with valid distinct

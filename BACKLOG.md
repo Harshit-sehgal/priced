@@ -184,7 +184,7 @@ CI verified: typecheck + lint + 258 tests + 35 pg tests + schema equivalence + 1
 
 | # | Task | Type | Notes |
 |---|------|------|-------|
-| D1 | Professional **legal review** of `terms` / `privacy` / `refunds` + Dodo product-classification confirmation | owner | Spec §49 / §21 — strongly advised before real money |
+| D1 | Professional **legal review** of `terms` / `privacy` / `refunds` + Dodo product-classification confirmation | owner | Spec §49 / §21 — strongly advised before real money. Review the operating entity and jurisdiction, governing law/dispute process, private support/privacy contact, data-subject request and deletion process, processor/subprocessor and international-transfer terms, consumer/tax/refund wording, chargebacks, and age/eligibility rules. Internal compliance review prepared this checklist; qualified counsel sign-off is still required. |
 | D2 | Swap Dodo **test → live** keys + webhook secret; switch `DODO_PAYMENTS_MODE=live` in Production only | owner | Keep Preview on test keys |
 | D3 | **Closed beta** with 10–20 people proving repeat competition (spec §77) | owner+verify | Watch the Cloudflare live tail (`npx wrangler tail priced`) for `takeover_succeeded`, `refund_failed`, etc. |
 | D4 | Public announcement | owner | Only after §76 gate + D1–D3 |
@@ -213,10 +213,10 @@ five-minute TTL while the eight-per-window quote limiter was respected. The
 totaling `$120.00`, and none has a sale. The refreshed Dodo Test Mode balance
 was `$64.13` after the one previously wallet-blocked legacy payment was also
 fully refunded from the dashboard and is now `$66.67` after the later
-terminal-quote payment/refund check. The seven other legacy rows have explicit
-`PAYMENT_ALREADY_REFUNDED` provider responses and no sale; they remain
-bookkeeping-only `manual_review` rows until signed provider refund events
-arrive.
+terminal-quote payment/refund check. At the time of this snapshot, the seven
+other legacy rows had explicit `PAYMENT_ALREADY_REFUNDED` responses and no
+sale. The later signed replay of missing `refund.succeeded` events reconciled
+them; see the latest reconciliation below.
 
 A separate hosted terminal-quote check on
 `dodo-http-terminal-20260918.com` paid one quote to `consumed` and then paid a
@@ -230,6 +230,15 @@ and exactly-once finalization. The strict same-version 25-way timing gate is
 still **External provider blocked** until the run can use distinct signed-in
 challengers or an equivalent controlled setup that keeps every quote inside
 the five-minute TTL. Do not weaken the deployed rate limits or quote rules.
+
+## Latest signed refund replay reconciliation — 2026-09-18
+
+Dodo Test Mode replayed missing historical `refund.succeeded` events to the
+active signed webhook endpoint. The hosted Supabase audit now returns zero
+Dodo refund rows in `manual_review` or `failed`; no customer-facing sale was
+associated with those rows and no database row was manually mutated. This
+closes the previously unexplained sandbox bookkeeping issue. The strict
+same-version 25-way timing gate remains **External provider blocked**.
 
 ## Quick start for a new agent
 
