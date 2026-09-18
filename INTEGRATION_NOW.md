@@ -564,7 +564,6 @@ This phase is complete only when a real hosted beta environment successfully exe
   `share_visit` and a later buyer; the current view sink intentionally stores
   anonymous share visits, so that attribution must not be inferred from a
   mere domain/time match.
-
 ## Latest hosted visual/accessibility pass — 2026-09-18
 
 - The active beta origin was reviewed in the hosted desktop browser across the
