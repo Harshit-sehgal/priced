@@ -28,8 +28,8 @@ export default function RefundsPage() {
           going through, so your quote was out of date.
         </li>
         <li>
-          <strong>The amount didn&apos;t match</strong> the asking price, or arrived in a currency we
-          do not settle in.
+          <strong>The amount didn&apos;t match</strong> the offer you selected, or arrived in a currency
+          we do not settle in.
         </li>
         <li>
           <strong>The tag became unavailable</strong> — for example it was added to the blocklist

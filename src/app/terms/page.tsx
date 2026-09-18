@@ -19,10 +19,10 @@ export default function TermsPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>1. What you are buying</h2>
       <p>
-        Priced is a public game. Paying the asking price buys{" "}
+        Priced is a public game. Paying an accepted offer buys{" "}
         <strong>temporary symbolic holder status</strong> on a domain&apos;s price tag as displayed
         on this website, and a permanent line in this website&apos;s history. It lasts until
-        somebody else pays the next price. That is the entire product.{" "}
+        somebody else makes a higher accepted offer. That is the entire product.{" "}
         <Link href="/about">Longer explanation here</Link>.
       </p>
 
@@ -36,10 +36,10 @@ export default function TermsPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>3. The market rules</h2>
       <p>
-        Unclaimed tags start at <span className="money">$5.00</span>. Each takeover raises the price
+        Unclaimed tags have a minimum offer of <span className="money">$5.00</span>. Each takeover raises the minimum
         by the greater of <span className="money">$5.00</span> or 1% of the current price, rounded
-        up to the next cent. The challenger pays the full new price. There is no bidding, no
-        auction, and no negotiation. The current holder cannot take their own tag. Prices are quoted
+        up to the next cent. You may enter any offer at or above that minimum, and your offer becomes
+        the new displayed price. There is no auction or negotiation. The current holder cannot take their own tag. Prices are quoted
         and settled in <strong>US dollars</strong> only; a payment settled in another currency is
         refunded rather than applied.
       </p>

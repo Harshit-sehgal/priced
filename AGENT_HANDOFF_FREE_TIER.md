@@ -23,11 +23,14 @@ Use Dodo Test Mode until the hosted integration gate is green.
 
 Priced Credits remain OFF.
 
-Pricing remains:
+Pricing minimums remain:
 
 `increment = max($5, 1% of current price)`
 
-`next price = current price + increment`
+`minimum takeover offer = current price + increment`
+
+Buyers may enter a higher integer-cent offer; that selected offer becomes the
+new displayed price and is the exact amount expected from the payment provider.
 
 ## Supabase
 

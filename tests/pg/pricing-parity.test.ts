@@ -156,7 +156,7 @@ async function finalize(args: FinalizeArgs): Promise<FinalizeResult> {
 
 /**
  * Reads the price the SQL function itself demands, straight out of its
- * WRONG_PRICE diagnostic ("WRONG_PRICE expected N, got M"). Probing beats
+ * WRONG_PRICE diagnostic ("WRONG_PRICE expected N, got M (minimum)"). Probing beats
  * re-implementing the SQL arithmetic in the test, which would just be a fifth
  * copy of the formula.
  */
@@ -234,16 +234,14 @@ test("SQL finalize_takeover and TS quoteFor agree at every ladder boundary", { s
       `${rung.label}: SQL wants ${sqlPrice}, quoteFor() wants ${tsQuote.nextPriceCents}`,
     );
 
-    // The SQL side must accept exactly one amount — a one-cent drift in either
-    // direction is a rejected payment, not a rounding nicety.
-    for (const off of [-1, 1]) {
-      const near = await finalize({
-        domain, buyerUserId: buyerId, buyerHandle,
-        expectedVersion: record.version, paidCents: sqlPrice + off,
-        providerPaymentId: `pi-near-${randomUUID()}`,
-      });
-      assert.ok(!near.ok && near.code === "WRONG_PRICE", `${rung.label}: ${sqlPrice + off} should be WRONG_PRICE`);
-    }
+    // Below the floor is rejected. A higher amount is intentionally valid and
+    // is covered by the dedicated high-offer SQL test.
+    const below = await finalize({
+      domain, buyerUserId: buyerId, buyerHandle,
+      expectedVersion: record.version, paidCents: sqlPrice - 1,
+      providerPaymentId: `pi-below-${randomUUID()}`,
+    });
+    assert.ok(!below.ok && below.code === "WRONG_PRICE", `${rung.label}: ${sqlPrice - 1} should be WRONG_PRICE`);
 
     const paid = await finalize({
       domain, buyerUserId: buyerId, buyerHandle,

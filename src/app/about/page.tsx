@@ -17,8 +17,9 @@ export default function AboutPage() {
         <p className="eyebrow">What this is</p>
         <h1 className="display display-hero">It&apos;s a price tag. That&apos;s the whole thing.</h1>
         <p className="muted" style={{ maxWidth: 640, margin: 0 }}>
-          Priced puts a price on familiar internet domains. You pay the asking price, and this
-          website shows your handle on that tag until somebody pays more and takes it from you.
+          Priced puts a price on familiar internet domains. You choose an offer at or above the
+          minimum, and this website shows your handle on that tag until somebody offers more and
+          takes it from you.
           <strong> Not the actual domain.</strong> Just the tag.
         </p>
       </section>
@@ -30,9 +31,8 @@ export default function AboutPage() {
             <strong>Find a tag.</strong> Search any domain. Unclaimed tags start at <span className="money">$5</span>.
           </li>
           <li>
-            <strong>Pay the asking price.</strong> Not a bid — there is no auction and nothing to
-            outbid. There is one price, the site tells you what it is, and you either pay it or you
-            don&apos;t.
+            <strong>Choose your offer.</strong> There is no auction or back-and-forth bidding. The
+            site shows a server-calculated minimum, and you can pay that amount or more.
           </li>
           <li>
             <strong>You&apos;re the holder.</strong> Your handle sits on the tag. You get a public
@@ -40,8 +40,8 @@ export default function AboutPage() {
             and numbers telling you how many people looked.
           </li>
           <li>
-            <strong>Then somebody takes it.</strong> The price goes up, they pay it, the tag is
-            theirs. Your name stays in the history forever. You get nothing else.
+            <strong>Then somebody takes it.</strong> They enter an offer at or above the new
+            minimum, and the tag is theirs. Your name stays in the history forever. You get nothing else.
           </li>
         </ol>
       </section>
@@ -55,8 +55,9 @@ export default function AboutPage() {
           <span className="money">$4,280</span> tag goes up by <span className="money">$42.80</span>.
         </p>
         <p className="small muted" style={{ margin: 0 }}>
-          The rule is fixed and the server decides the number, not you. Prices never go down, tags
-          are never delisted, and nobody gets a discount for asking nicely.
+          The minimum rule is fixed and the server decides it. Your selected offer can be higher,
+          and becomes the new displayed price. Prices never go down, tags are never delisted, and
+          nobody gets a discount for asking nicely.
         </p>
       </section>
 
@@ -92,7 +93,7 @@ export default function AboutPage() {
         <h2 className="display display-section">When you get your money back</h2>
         <p>
           Automatically, if the takeover didn&apos;t happen. If somebody beat you to the tag while
-          your payment was going through, or the amount didn&apos;t match the asking price, the
+          your payment was going through, or the amount didn&apos;t match the offer you selected, the
           charge is refunded on its own — you do not have to ask. You never pay for a takeover you
           didn&apos;t get.
         </p>

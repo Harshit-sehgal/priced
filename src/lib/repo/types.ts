@@ -46,6 +46,8 @@ export type RepoQuote = {
   expectedVersion: number;
   currentPriceCents: number;
   requiredIncrementCents: number;
+  /** The server-computed floor for this quote; nextPriceCents is the selected offer. */
+  minimumPriceCents: number;
   nextPriceCents: number;
   expiresAt: string;
   status: string;
@@ -159,7 +161,7 @@ export type RepoAdapter = {
   marketValueCents(): Promise<number>;
 
   // ------------------------------------------------------------------ quotes
-  createQuote(domainInput: string, buyerUserId: string): Promise<RepoQuote>;
+  createQuote(domainInput: string, buyerUserId: string, offerCents?: number): Promise<RepoQuote>;
   getQuote(quoteId: string): Promise<RepoQuote | null>;
   markQuoteStatus(quoteId: string, status: RepoQuote["status"]): Promise<void>;
   /**

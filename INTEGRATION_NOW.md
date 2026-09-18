@@ -320,7 +320,7 @@ Details: `BACKLOG.md` Lane C8.
 - Realtime: enabled for required market tables
 - Privileged RPCs: service-role only
 - Priced Credits: OFF
-- Pricing formula: `increment = max($5, 1% of current price)` and `next price = current price + increment`
+- Pricing formula: `increment = max($5, 1% of current price)` and `minimum takeover offer = current price + increment`; buyers may choose a higher offer
 - Goal: complete a real free-tier sandbox/closed-beta integration before enabling real money
 
 ## Recorded execution evidence (2026-09-11)

@@ -26,6 +26,16 @@ export const START_PRICE_CENTS = 500;
 export const MIN_TAKEOVER_INCREMENT_CENTS = 500;
 export const TAKEOVER_RATE_BPS = 100; // 1.00%
 
+/** A browser may suggest an offer, but the server must keep it integer-cent and finite. */
+export function isValidOfferCents(value: number): boolean {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
+/** The computed minimum offer for the market state represented by `record`. */
+export function minimumOfferCents(record: DomainRecord): number {
+  return quoteFor(record).nextPriceCents;
+}
+
 const seedTime = {
   d1: "2026-09-04T12:00:00.000Z",
   d2: "2026-09-05T09:00:00.000Z",
@@ -157,7 +167,9 @@ export function applyTakeover(
   if (record.version !== expectedVersion) return { ok: false, code: "STALE_QUOTE" };
 
   const quote = quoteFor(record);
-  if (quote.nextPriceCents !== paidPriceCents) return { ok: false, code: "WRONG_PRICE" };
+  if (!isValidOfferCents(paidPriceCents) || paidPriceCents < quote.nextPriceCents) {
+    return { ok: false, code: "WRONG_PRICE" };
+  }
 
   const event: PriceEvent = { holder: cleanHolder, priceCents: paidPriceCents, at };
   return {

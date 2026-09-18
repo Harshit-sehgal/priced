@@ -63,11 +63,11 @@ export default async function TakeoverPage({ params }: Params) {
         <h1 className="display display-section">{quote.domain}</h1>
         {quote.currentPriceCents > 0 ? (
           <p className="muted" style={{ margin: 0 }}>
-            You pay the full new price. The current holder receives nothing.
+            You choose the offer. The current holder receives nothing.
           </p>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
-            First claim. You set the opening price.
+            First claim. You choose the opening price.
           </p>
         )}
       </section>
@@ -84,10 +84,10 @@ export default async function TakeoverPage({ params }: Params) {
             <span>Current price</span>
             <span className="dots" />
             <span className="money">{quote.currentPriceCents === 0 ? "—" : money(quote.currentPriceCents)}</span>
-            <span>Required increase</span>
+            <span>Minimum offer</span>
             <span className="dots" />
-            <span className="money">{money(quote.requiredIncrementCents)}</span>
-            <span className="calc-total">You pay</span>
+            <span className="money">{money(quote.minimumPriceCents)}</span>
+            <span className="calc-total">Your offer</span>
             <span className="dots calc-total" />
             <span className="money calc-total money-up">{money(quote.nextPriceCents)}</span>
           </div>

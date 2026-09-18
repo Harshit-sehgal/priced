@@ -33,7 +33,7 @@ export function MarketTable({ rows }: { rows: RepoDomain[] }) {
             <span className="cell-holder">@{row.holderHandle ?? "—"}</span>
             <span className="cell-price money">{money(row.priceCents)}</span>
             <span className="cell-price small muted money">
-              next {money(next.nextPriceCents)}
+              min {money(next.nextPriceCents)}
             </span>
             <span className="btn btn-sm btn-take">Take</span>
           </Link>
