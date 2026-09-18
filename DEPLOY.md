@@ -154,8 +154,8 @@ delivery (replay the same event), stale quote (take the domain from another
 session before paying), simultaneous checkout from two sessions, refund of a
 stale payment. **No unexplained payment states are permitted.**
 
-Money-path hardening notes (deep-scan pass, 2026-09-12 — CI-verified, needs
-hosted verification before counting as staging-verified):
+Money-path hardening notes (deep-scan pass, 2026-09-12 — CI-verified; hosted
+verification status is recorded below):
 - Refund idempotency keys are deterministic per payment
   (`refund:<provider>:<paymentId>`, shared by all attempts for that payment),
   per Dodo's "one key per logical intent, reused across retries" contract —
@@ -169,9 +169,11 @@ hosted verification before counting as staging-verified):
   lease/manual-review path, never a clean failure.
 - Stale-but-signed webhook deliveries (valid HMAC, age past the 10-minute
   window) flow through the money pipeline with a `webhook_stale_but_signed`
-  alert instead of a terminal 400. Verify with a dashboard replay of an old
-  `payment.succeeded` event: expect HTTP 200 and either a sale or a
-  ledger-tracked refund, never a silent drop.
+  alert instead of a terminal 400. The active Worker was verified on
+  2026-09-18 with a no-money `payment.failed` probe: valid stale HMAC → HTTP
+  200, duplicate event → HTTP 200 duplicate, and forged stale HMAC → HTTP 400
+  `invalid_signature`. For a paid dashboard replay, expect HTTP 200 and either
+  a sale or a ledger-tracked refund, never a silent drop.
 - `setQuoteCheckout` refuses terminal quotes (`QUOTE_NOT_CHECKOUTABLE` →
   HTTP 409 `quote_<status>`). Verify by expiring a quote, then attempting
   checkout: expect 409, and the quote row must stay `expired`.

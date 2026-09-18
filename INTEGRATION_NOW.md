@@ -349,7 +349,7 @@ Details: `BACKLOG.md` Lane C8.
 - The four hosted hardening migrations from PR #53 were applied to the existing Priced Supabase project: finalize idempotency recheck, analytics retention, payment disputes, and profiles column privacy. A hosted security query confirmed the dispute table and retention index exist; `service_role` can execute the privileged functions while `anon` cannot; `service_role` can read disputes while `anon` cannot; and `anon` can read public profile fields but not `suspended_at`.
 - The stable-origin smoke suite passes all 9 checks after the deployment. Dodo’s signed Test Mode webhook Testing control sent a `payment.failed` example to the live endpoint, and Vercel recorded HTTP 200 on the current production deployment.
 - The Dodo Test Mode webhook endpoint now subscribes to all 12 required events: `payment.succeeded`, `payment.failed`, `payment.cancelled`, `refund.succeeded`, `refund.failed`, and `dispute.opened`, `dispute.challenged`, `dispute.accepted`, `dispute.cancelled`, `dispute.expired`, `dispute.won`, and `dispute.lost`.
-- Deep-scan money-path hardening (2026-09-12, CI-verified: typecheck + 178 unit tests + build green, NOT yet staging-verified): deterministic refund idempotency key per payment (`refund:<provider>:<paymentId>` shared by all attempts, per Dodo's "one key per logical intent" contract) replacing the per-attempt claim-token key that could double-refund on timeout-after-success; refund execution pinned to the event's owning provider via `getProviderForEvent` (env switches no longer misdirect refunds); `setQuoteCheckout` fallback resurrection of terminal quotes removed (throws `QUOTE_NOT_CHECKOUTABLE`, route returns 409); `AbortSignal.timeout(15_000)` on Dodo checkout/refund fetches; stale-but-signed webhook deliveries re-verified with the age gate waived (HMAC still enforced) and routed through the money pipeline with a `webhook_stale_but_signed` alert instead of a terminal 400; `x-real-ip` dropped from the trusted client-IP set with literal IPv4/IPv6 validation. Details in `BACKLOG.md` Lane C2. These need hosted verification (stale-replay, provider-mismatch, and terminal-quote races) before they count as staging-verified.
+- Deep-scan money-path hardening (2026-09-12, CI-verified: typecheck + 178 unit tests + build green): deterministic refund idempotency key per payment (`refund:<provider>:<paymentId>` shared by all attempts, per Dodo's "one key per logical intent" contract) replacing the per-attempt claim-token key that could double-refund on timeout-after-success; refund execution pinned to the event's owning provider via `getProviderForEvent` (env switches no longer misdirect refunds); `setQuoteCheckout` fallback resurrection of terminal quotes removed (throws `QUOTE_NOT_CHECKOUTABLE`, route returns 409); `AbortSignal.timeout(15_000)` on Dodo checkout/refund fetches; stale-but-signed webhook deliveries re-verified with the age gate waived (HMAC still enforced) and routed through the money pipeline with a `webhook_stale_but_signed` alert instead of a terminal 400; `x-real-ip` dropped from the trusted client-IP set with literal IPv4/IPv6 validation. The stale-replay and terminal-quote paths are now **Staging verified** on the active Worker; provider-mismatch and timeout-after-success remain CI-verified only because safely forcing them would alter live payment configuration or create an indeterminate external refund. Details in `BACKLOG.md` Lane C2.
 
 ## Do not redo
 
@@ -511,3 +511,23 @@ This phase is complete only when a real hosted beta environment successfully exe
   paths. It does not clear the existing **External provider blocked** clean
   same-version 25-way payment race or the owner-gated legal, real-device,
   monitoring, and live-money launch gates.
+
+## Latest hosted money-path hardening probe — 2026-09-18
+
+- The current `main` webhook fix was merged in PR #65 and deployed to the
+  active Cloudflare Worker as version `3a457a8f-9d38-454e-ba4a-43e3be2afbc2`.
+- A synthetic Dodo Standard-Webhooks `payment.failed` delivery with a valid
+  HMAC and a timestamp one hour old was accepted with HTTP 200 and recorded as
+  an ignored failed payment. Replaying the same event id returned HTTP 200 with
+  `duplicate: true`, proving the hosted stale-delivery and event-idempotency
+  path without creating a payment, sale, or refund.
+- The same stale timestamp with a forged signature returned HTTP 400 with
+  `invalid_signature`, while a fresh forged signature also returned HTTP 400.
+  The route now reports the definitive HMAC failure rather than the stale
+  timestamp pre-filter reason. This is **Staging verified** for stale-signed
+  webhook acceptance and forged-delivery rejection.
+- The existing hosted terminal-quote checkout/payment/refund race remains
+  **Staging verified**. Provider-mismatch and timeout-after-success behavior
+  remain CI-verified only because safely forcing a live provider switch or a
+  real network timeout would change payment configuration or create an
+  indeterminate external refund.

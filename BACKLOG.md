@@ -77,6 +77,15 @@ Implemented in this pass (CI-verified: typecheck + 178 unit tests + build green)
 | C2-5 | `stale_timestamp` verification failure returned terminal 400: paid money with no sale, no refund, no ledger row | Stale-but-signed deliveries re-verified with the age gate waived (HMAC still enforced) and routed through the normal money pipeline; `webhook_stale_but_signed` alert | `src/lib/payments.ts`, `src/app/api/webhooks/payments/route.ts` |
 | C2-6 | `x-real-ip` treated as platform-trusted though client-sendable on edge-bypass paths; garbage strings became limiter buckets | Dropped from trusted set; literal IPv4/IPv6 validation on all IP values; untrusted input collapses to the shared `unknown` bucket | `src/lib/client-ip.ts`, `tests/integration/client-ip.test.ts` |
 
+Hosted verification update (2026-09-18): C2-3's terminal-quote behavior is
+covered by the hosted terminal-quote payment/refund race, and C2-5's
+stale-but-signed webhook path was exercised on the active Worker with a valid
+stale HMAC, duplicate replay, and forged stale signature. C2-5 is now
+**Staging verified**. C2-1, C2-2, and C2-4 remain CI-verified only because
+provider-switch and timeout-after-success probes cannot be safely forced on
+the live payment configuration without creating an indeterminate external
+refund.
+
 Still open (owner/provider decisions, NOT code-fixable here): chargeback-keeps-tag policy, auth+capture vs charge-first economics, trademark bulk-reserve + takedown queue, PITR + nightly dumps, DPDP/GDPR delete/export, wallet-balance alerting. See Lane D / INTEGRATION_NOW open items.
 
 ## Lane C3 — Money-path hardening + Cloudflare repair (2026-09-13)
