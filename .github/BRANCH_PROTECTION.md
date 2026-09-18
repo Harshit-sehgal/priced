@@ -11,6 +11,8 @@
   rule currently has 0 required approvals — see "Current reality" below)*
 - ☑ Require status checks to pass before merging
   - Search for the `verify` job from `.github/workflows/ci.yml` and require it.
+  - Search for the `Hosted beta smoke` job from `.github/workflows/ci.yml` and
+    require it after its first successful run.
   - ☑ Require branches to be up to date before merging
 - ☑ Require conversation resolution before merging (optional but recommended)
 - ☑ Do not allow bypassing the above settings (applies to admins too, unless you add an explicit bypass list)
@@ -28,13 +30,16 @@ gh api repos/Harshit-sehgal/priced/rulesets --jq '.[].name'
 ### Current reality (2026-09-13)
 
 `enforce_admins`, no force-push, no deletions, and the required `verify`
-context are set. `required_approving_review_count` is **0**, so the "1
-approval" recommendation above is not yet enforced. Enable it in the UI when a
-second maintainer is available; solo development is the reason it is off.
+context are set. The `Hosted beta smoke` context is implemented in the
+workflow but must be added to the required-check list after its first
+successful run. `required_approving_review_count` is **0**, so the "1 approval"
+recommendation above is not yet enforced. Enable it in the UI when a second
+maintainer is available; solo development is the reason it is off.
 
 ## CI is the gate
 
-`.github/workflows/ci.yml` (`verify` job) must stay required. It runs:
+`.github/workflows/ci.yml` (`verify` and `hosted-beta` jobs) must stay required.
+The `verify` job runs:
 
 `lint` → `typecheck` → `test:market` → `test:concurrency` → `test` →
 `build` → `cf:build` (the artifact that actually ships) → `test:browser` →
@@ -42,6 +47,10 @@ second maintainer is available; solo development is the reason it is off.
 analytics/health smoke → live HTTP race.
 
 Never weaken it to unblock a release. If it's red, the release is red.
+
+The `Hosted beta smoke` job runs `npm run smoke:staging` against the stable
+Cloudflare origin without secrets. It is separate from the local build gate so
+the real hosted contract remains visible as its own status check.
 
 ## Release lanes
 

@@ -18,6 +18,31 @@ Active beta hosting (2026-09-12): Cloudflare Worker `priced` at
 Vercel references below describe the prior deployment unless superseded by
 `INTEGRATION_NOW.md`.
 
+Latest sandbox reconciliation (2026-09-18): Dodo Test Mode successfully
+completed the three previously wallet-blocked stale-payment refunds after
+disposable sandbox top-ups. Three matching hosted refund rows are now
+`succeeded`; seven older provider-`PAYMENT_ALREADY_REFUNDED` `unknown_quote`
+rows remain intentionally `manual_review`, and one older row is `failed` with
+the same explicit provider error, pending authoritative signed refund events.
+The 25-payment hosted batch is now **Staging verified (partial)**: one
+takeover finalized and 24 refund rows succeeded; 16 quotes expired during
+the five-minute TTL and 8 were stale. A clean same-version 25-way race is
+still **External provider blocked** by the deployed eight-per-window quote
+limiter and five-minute TTL, not by missing wallet capacity.
+A separate two-quote hosted terminal-quote check also paid the winner and then
+paid the competing quote through its already-created checkout; the latter
+returned `stale`, and its `$5.00` refund ledger row became `succeeded` with no
+second sale.
+
+Latest browser beta pass (2026-09-18): public routes, holder profile,
+analytics, receipt/share surface, search, quote confirmation, Dodo checkout,
+checkout cancellation, and a real Dodo Test Mode declined-card path were
+exercised on the stable Cloudflare origin. The declined payment produced a
+signed `payment.failed` delivery accepted with HTTP 200, left the tag
+unclaimed, and did not change the `$66.67` Test Mode balance. The local browser
+suite passed 119 tests with 1 intentional skip on desktop and mobile; hosted
+browser console errors/warnings were zero.
+
 ## Product
 
 | Item | Status | Evidence |
@@ -46,7 +71,7 @@ Vercel references below describe the prior deployment unless superseded by
 |---|---|---|
 | Dodo provider: PWYW checkout, Standard-Webhooks verify, refunds | Implemented; CI-verified logic | `tests/integration/dodo.test.ts` (network stubbed) |
 | Dodo permission check for symbolic-status product | Implemented | Owner confirmed Dodo product verification/approval; do not reopen unless Dodo requests it |
-| Dodo sandbox matrix (success/fail/cancel/duplicate/stale/simultaneous/refund-failure/missing-metadata/wrong-amount/outage) | Staging verified (partial); External provider blocked for complete ten-way refund closure | Real Test Mode success, declined payment, signed webhook acceptance, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic finalization, Dodo tax-inclusive amount handling, and hosted stale/wrong-amount refunds are verified on the stable beta origin. The deployed refund path now fails closed on Dodo `pending`/`review` responses and reconciles signed `refund.succeeded`/`refund.failed` events; the Test Mode endpoint subscribes to all 12 required events. A hosted refund-ledger audit found 10 disposable `unknown_quote` rows with no matching sale: seven provider responses said `PAYMENT_ALREADY_REFUNDED`, while three successful Dodo Test Mode race payments remain parked in `manual_review` after `INSUFFICIENT_WALLET_FUNDS`. Direct dashboard checks confirmed those three payments are successful, refundable payments from the disposable race fixtures. The latest live Account Statement check shows $5.76 total balance, still insufficient for the remaining refund-heavy race. Dodo documents that refunds use available wallet balance and advises waiting for balance or contacting support. The provider-outage path is also Staging verified: a temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, then the override was removed and normal health/smoke checks passed. The 25-way hosted payment race remains outstanding. Procedure: `DEPLOY.md` §4. |
+| Dodo sandbox matrix (success/fail/cancel/duplicate/stale/simultaneous/refund-failure/missing-metadata/wrong-amount/outage) | Staging verified (partial); External provider blocked for a clean 25-way same-version timing race | Real Test Mode success, declined payment, signed webhook acceptance, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic finalization, Dodo tax-inclusive amount handling, hosted stale/wrong-amount refunds, and a hosted terminal-quote payment/refund race are verified on the stable beta origin. The deployed refund path now fails closed on Dodo `pending`/`review` responses and reconciles signed `refund.succeeded`/`refund.failed` events; the Test Mode endpoint subscribes to all 12 required events. The 2026-09-18 hosted 25-payment batch produced 25 provider successes, exactly one consumed quote/sale, eight stale quotes, sixteen TTL-expired quotes, and 24 succeeded refund-ledger rows totaling `$120.00` with no second sale. The provider-outage path is also Staging verified: a temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, then the override was removed and normal health/smoke checks passed. Procedure: `DEPLOY.md` §4. |
 | Live Dodo configuration | Owner blocked | DEPLOY.md §6 |
 
 ## Infrastructure
@@ -59,7 +84,7 @@ Vercel references below describe the prior deployment unless superseded by
 | Cloudflare Worker beta deployment | Staging verified | Worker `priced` serves the stable beta origin; health, Supabase, Redis, Google Auth, Dodo Test Mode checkout/webhook, profile, analytics, share, and routing checks pass. On 2026-09-13 a stale artifact (prerendered pages 500ing with OpenNext's static-to-dynamic error, client bundle missing the inlined public Supabase env) was repaired and redeployed: all public HTML routes return 200, custom 404 renders, health/db/redis/origin are green, and the 10-check smoke passes (including every public HTML route). |
 | Vercel project rename `internet-price-tag` → `priced` | Implemented | Existing project renamed through the authenticated Vercel CLI; project id preserved and production alias remains `https://internet-price-tag.vercel.app` |
 | Env separation (Local/Preview/Production) | Implemented | Matrix in `.env.example`; active Cloudflare Worker holds beta secrets, while ordinary previews remain secret-free/demo-only. |
-| Monitoring/alerts (error-event list, uptime, 5xx rate) | Implemented (docs + structured logs + free uptime workflow); Owner blocked for persistent error alert routing | DEPLOY.md §8: exact event queries + uptime endpoints. `.github/workflows/staging-health.yml` checks Cloudflare liveness, Supabase readiness, Redis readiness, origin config, and every public HTML route every 15 minutes; Cloudflare live tail is available for diagnostics. A persistent error-alert destination still needs owner selection. |
+| Monitoring/alerts (error-event list, uptime, 5xx rate) | Implemented (docs + structured logs + free uptime workflow); Owner blocked for persistent error alert routing | DEPLOY.md §8: exact event queries + uptime endpoints. `.github/workflows/staging-health.yml` checks Cloudflare liveness, Supabase readiness, Redis readiness, origin config, and every public HTML route every 15 minutes; `.github/workflows/ci.yml` now has a separate `Hosted beta smoke` status check; Cloudflare live tail is available for diagnostics. A persistent error-alert destination still needs owner selection. |
 | Health endpoint (liveness + `?check=db` readiness) | CI verified | `tests/integration/health-analytics.test.ts` + CI smoke step |
 
 ## Holder value layer
@@ -105,7 +130,7 @@ Vercel references below describe the prior deployment unless superseded by
 ## Owner gates remaining (in order — exact actions in DEPLOY.md)
 
 1. **Supabase/Auth** (§1): the hosted logical schema/data dump and isolated PostgreSQL 17 restore are complete; Google OAuth, callback, welcome, logout/re-login, `@harshit` handle creation, the live two-session Realtime update, database-level hosted RPC concurrency, and the real REST/service-role RPC harness are complete. Managed backups/PITR remain unavailable on the Free Plan.
-2. **Sandbox gate** (§4/B1): exercise the 25-way race through the hosted HTTP/payment path and resolve the Dodo Test Mode wallet limitation that blocked two refunds in the ten-way run. The provider-outage case is Staging verified, and the normal deployment has been restored with a passing `npm run smoke:staging` result. The ten-way run produced exactly one takeover and nine stale quotes; the real service-role harness and database-level hosted RPC concurrency are already Staging verified.
+2. **Sandbox gate** (§4/B1): the hosted 25-payment batch is complete with exactly one takeover and 24 succeeded refund-ledger rows; a clean same-version 25-way timing run remains blocked because the eight-per-window quote limiter and five-minute TTL cannot be combined with one signed-in challenger account in the current browser setup. The provider-outage case is Staging verified, and the normal deployment has a passing `npm run smoke:staging` result. The real service-role harness and database-level hosted RPC concurrency are already Staging verified.
 3. **Monitoring** (§8/A8): add an authorized external uptime check and decide how to handle alerting/log drains; Vercel Hobby currently has `Add Drain`, `Add Rule`, and `Add Webhook` disabled, so monitoring wiring is **External provider blocked** without a plan change or external service.
 4. **Backup/recovery**: the documented logical dump and isolated restore procedure is Staging verified. Supabase Free Plan has no managed project backups; do not enable PITR during the free beta phase. Revisit managed backups and environment isolation before real-money production.
 5. **Legal review** of policy pages (D1).
@@ -119,3 +144,25 @@ Track via existing `analytics_events` (all real, SQL-counted):
 `domain_searched → domain_opened → takeover_clicked → quote_created → checkout_started → payment_succeeded → takeover_succeeded → share_clicked → share_visit → (challenger) takeover_clicked…`
 
 The one number that matters: repeat takeover rate — share of takeovers whose buyer previously arrived via a `share_visit`. SQL for it exists conceptually in the funnel events; a beta dashboard query should be written when staging data exists (P2 until then).
+
+## 2026-09-18 hosted payment reconciliation
+
+The fresh `dodo-http-race-20260918-c.com` batch submitted 25 successful Dodo
+Test Mode payments. Supabase recorded one consumed quote/sale at `$5.00`,
+eight stale quotes, and sixteen expired quotes. All 24 non-winning payment
+IDs have succeeded Dodo refund-ledger rows totaling `$120.00`; no refunded
+payment created a sale. The final legacy wallet-blocked refund was also
+completed in Dodo Test Mode, and the balance after settlement was `$64.13`.
+Seven older rows still have explicit `PAYMENT_ALREADY_REFUNDED` responses and
+no sale; they are bookkeeping-only `manual_review` rows pending signed
+provider refund events.
+This closes the wallet-funding issue for the exercised refund set, but the
+strict same-version 25-way timing gate stays **External provider blocked**
+until 25 quotes can be paid before the five-minute TTL with valid distinct
+challengers or an equivalent controlled provider test.
+A separate hosted terminal-quote check on
+`dodo-http-terminal-20260918.com` settled one winner and one competing
+payment; the competing return was `stale`, its refund ledger row was
+`succeeded`, and no second sale existed.
+The Dodo Test Mode balance is now `$66.67` after this additional payment and
+refund activity.

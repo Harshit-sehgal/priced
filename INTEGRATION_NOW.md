@@ -437,3 +437,77 @@ This phase is complete only when a real hosted beta environment successfully exe
 - Dodo Test Mode remains **External provider blocked** for the outstanding hosted 25-way payment race. The Test Mode Account Statement currently shows `$5.76`; no further refund-heavy race was started against that balance.
 - A read-only hosted refund-ledger audit on 2026-09-13 found 10 disposable `unknown_quote` refund rows with no matching sale: seven provider responses were `PAYMENT_ALREADY_REFUNDED`, and three successful Dodo Test Mode payments from the HTTP race fixtures remain in `manual_review` after `INSUFFICIENT_WALLET_FUNDS`. The three payment detail pages confirmed successful `$5.90` charges with the disposable race metadata and an available refund action. No customer-facing sale is associated with these rows; refund completion remains blocked by Dodo's available-wallet balance.
 - The owner has already opened a Dodo support conversation requesting Test Mode wallet help (2026-09-11). The latest provider message is an automatic acknowledgment that the team was offline, the request is queued, and it should not be resent; no human provider reply or wallet credit is present yet.
+
+## Latest sandbox reconciliation — 2026-09-17
+
+- Dodo Test Mode remained enabled throughout this work; no live mode and no real-money charge were used. Two additional disposable `$5.00` sandbox checkouts completed through the active Cloudflare beta. The India checkout displayed `$5.00` plus `$0.90` tax (`$5.90` total), while the US-address checkout displayed `$5.00` total. Both hosted return URLs reported `succeeded`, and their quotes were consumed by Priced.
+- The three previously wallet-blocked stale-race payments were retried from the Dodo Test Mode dashboard after those sandbox top-ups. Dodo now shows each payment as `Refunded` with a successful full refund; the three provider payment IDs are `pay_0NnNLRt51vzpSKrPYiqGo`, `pay_0NnNLRkBWr3jhkR93LF17`, and `pay_0NnNLRa5GaErAA8VLybb3`. Captured refund records include `ref_0NnoSO00Z5Z5ZaLRw5y3x` and `ref_0NnoT5WJ0vK3BnZQlLFlP`.
+- A delayed, read-only Supabase audit after reconciliation found all three corresponding Dodo refund rows in `succeeded` (`unknown_quote`, `unknown_quote`, and `provider_refund_event`). Seven older disposable `unknown_quote` rows remain `manual_review`, and one older row is `failed` with the explicit provider error `PAYMENT_ALREADY_REFUNDED`; these are the known provider-already-refunded cases from the earlier audit and are intentionally not force-mutated without an authoritative signed refund event. No customer-facing sale is associated with these rows.
+- `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging` passes all 10 checks after the sandbox work.
+- The 25-way hosted HTTP/payment race remains **External provider blocked** and was not started: it would create 24 stale-payment refunds and, at the observed roughly `$6` wallet debit per refund, needs approximately `$144` of Test Mode wallet capacity plus reserve. The hosted database-level 10/25 concurrency races remain **Staging verified**.
+- The confirmed root cause remains Dodo Test Mode wallet capacity and refund fees/tax treatment—not a Priced `$5` versus `$5.90` pricing mismatch. The application validates the pre-tax market amount while the provider checkout may collect tax-inclusive totals.
+
+## Latest sandbox payment race — 2026-09-18
+
+- Dodo Test Mode remained enabled throughout the race; no live mode and no
+  real-money charge were used. A fresh disposable tag,
+  `dodo-http-race-20260918-c.com`, received 25 real hosted Dodo Test Mode
+  payments using the provider's documented success card.
+- The hosted return paths and Supabase quote ledger converged to exactly one
+  `consumed` quote/sale (`@harshit`, `$5.00`, version 1), eight `stale` quotes,
+  and sixteen `expired` quotes. The sixteen expiries are explained by the
+  five-minute quote TTL while the deployed user+domain limiter allowed only
+  eight new quotes per window; they are not unexplained payment outcomes.
+- All 24 non-winning provider payments have `dodo` refund-ledger rows in
+  `succeeded`, totaling `$120.00` of market-price refunds, with no matching
+  sale. The Dodo Test Mode Account Statement was `$64.13` after the
+  25-payment batch and separately reconciled legacy refund, and is now
+  `$66.67` after the additional two-quote terminal-race payment/refund check.
+- The one legacy payment that had been parked for `INSUFFICIENT_WALLET_FUNDS`
+  was refunded from the Dodo dashboard in Test Mode; Dodo confirmed the full
+  `$5.90` refund as `ref_0Nnox6QkZBIFncKwfDwK0`, and the matching Supabase
+  refund row is now `succeeded`. The remaining seven legacy rows have explicit
+  `PAYMENT_ALREADY_REFUNDED` provider responses and no customer-facing sale;
+  they remain bookkeeping-only `manual_review` rows until an authoritative
+  signed refund event is available.
+- A separate disposable two-quote hosted check,
+  `dodo-http-terminal-20260918.com`, paid one quote to `consumed`, then paid
+  the competing quote through its already-created checkout. The return page
+  reported `stale`, and the hosted refund ledger recorded the non-winning
+  payment as `succeeded` for `$5.00` with no second sale. This verifies the
+  terminal-quote payment/refund race through the real hosted checkout and
+  signed webhook path; it did not create a duplicate takeover.
+- This is **Staging verified (partial)** for the hosted 25-payment/refund
+  path and exactly-once finalization. The clean same-version 25-way race
+  timing gate remains **External provider blocked** until it can be run with
+  all 25 quotes still within their five-minute TTL (or with separate signed-in
+  challenger accounts), without weakening the deployed rate limits.
+- `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging`
+  remains green with all 10 checks. Local `npm test` passes 258 tests with 0
+  failures and 7 expected real-Postgres skips; `npm run typecheck` passes.
+
+## Latest browser beta pass — 2026-09-18
+
+- The stable Cloudflare beta was exercised in Dodo Test Mode only; no live mode
+  and no real-money charge were used. Public pages (`/`, `/about`, `/terms`,
+  `/privacy`, `/refunds`, `/login`, `/welcome`), holder profile, analytics,
+  claimed receipt/share surface, domain search, quote confirmation, and the
+  embedded Dodo checkout all rendered successfully.
+- A disposable quote for `beta-browser-20260918-c.com` reached the checkout,
+  then was cancelled through Dodo's own confirmation dialog. The tag remained
+  unclaimed and no sale or payment was created.
+- A separate disposable quote for `beta-browser-20260918-d.com` was submitted
+  with Dodo's documented generic-decline card. The return page reached the
+  server-authoritative finalization state, Dodo delivered `payment.failed` to
+  the signed endpoint with HTTP 200, the tag remained unclaimed, and the Test
+  Mode balance remained `$66.67`.
+- Hosted health, Supabase readiness, Redis readiness, routing, CSRF, auth
+  callback, analytics taxonomy, and unknown-event checks passed again through
+  `npm run smoke:staging`. The local Playwright suite passed 119 tests with 1
+  intentional skip across desktop and mobile. The hosted browser tab recorded
+  zero console errors or warnings.
+- This additional pass is **Staging verified** for the exercised public,
+  cancellation, declined-payment, signed-failure-webhook, and no-sale safety
+  paths. It does not clear the existing **External provider blocked** clean
+  same-version 25-way payment race or the owner-gated legal, real-device,
+  monitoring, and live-money launch gates.

@@ -143,3 +143,25 @@ jobs:
           exit $STATUS
         env:
           NEXT_TELEMETRY_DISABLED: 1
+
+  hosted-beta:
+    name: Hosted beta smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # No secrets are needed. This checks the stable Cloudflare contract and
+      # never creates a quote, checkout, sale, or payment.
+      - name: Run hosted smoke
+        run: npm run smoke:staging
+        env:
+          STAGING_URL: https://priced.harshit10sehgal.workers.dev
