@@ -531,7 +531,6 @@ This phase is complete only when a real hosted beta environment successfully exe
   remain CI-verified only because safely forcing a live provider switch or a
   real network timeout would change payment configuration or create an
   indeterminate external refund.
-
 ## Latest signed refund replay reconciliation — 2026-09-18
 
 - Dodo Test Mode's endpoint control was used to replay missing messages from
