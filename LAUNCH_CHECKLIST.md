@@ -19,11 +19,11 @@ Vercel references below describe the prior deployment unless superseded by
 `INTEGRATION_NOW.md`.
 
 Latest sandbox reconciliation (2026-09-18): Dodo Test Mode successfully
-completed the three previously wallet-blocked stale-payment refunds after
-disposable sandbox top-ups. Three matching hosted refund rows are now
-`succeeded`; seven older provider-`PAYMENT_ALREADY_REFUNDED` `unknown_quote`
-rows remain intentionally `manual_review`, and one older row is `failed` with
-the same explicit provider error, pending authoritative signed refund events.
+completed the previously wallet-blocked stale-payment refunds after
+disposable sandbox top-ups. Dodo's signed replay of missing historical
+`refund.succeeded` events then reconciled the remaining legacy rows; the
+hosted Supabase audit now has zero Dodo refund rows in `manual_review` or
+`failed`. No customer-facing sale is associated with those refunds.
 The 25-payment hosted batch is now **Staging verified (partial)**: one
 takeover finalized and 24 refund rows succeeded; 16 quotes expired during
 the five-minute TTL and 8 were stale. A clean same-version 25-way race is

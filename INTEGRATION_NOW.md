@@ -531,3 +531,19 @@ This phase is complete only when a real hosted beta environment successfully exe
   remain CI-verified only because safely forcing a live provider switch or a
   real network timeout would change payment configuration or create an
   indeterminate external refund.
+## Latest signed refund replay reconciliation — 2026-09-18
+
+- Dodo Test Mode's endpoint control was used to replay missing messages from
+  the last week to the active signed webhook endpoint. The replay delivered
+  the historical `refund.succeeded` events with HTTP 200; no live mode or
+  real-money charge was involved.
+- The hosted Supabase refund audit now returns **zero** rows with status
+  `manual_review` or `failed`. The six legacy `manual_review` rows and one
+  `failed` row that had explicit `PAYMENT_ALREADY_REFUNDED` responses all
+  converged through authoritative signed provider events. No customer-facing
+  sale was associated with any of them, and no database row was manually
+  mutated.
+- This closes the previously unexplained sandbox refund bookkeeping issue for
+  the exercised payments. The remaining payment gate is still the clean
+  same-version 25-way timing race, which remains **External provider blocked**
+  by the deployed quote limiter and five-minute TTL.
