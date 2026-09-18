@@ -602,3 +602,20 @@ This phase is complete only when a real hosted beta environment successfully exe
   confirms that the wallet-capacity hurdle has changed, but it does not count
   as a 25-way timing result and no new race was started without the required
   distinct signed-in challenger setup.
+
+## Controlled challenger setup — 2026-09-18
+
+- Four disposable, auto-confirmed Supabase Test users were created through
+  the existing Authentication dashboard and claimed handles `racer1` through
+  `racer4`. No production users, rate limits, or application code were
+  changed.
+- Authenticated sessions for those four users created 25 quotes for the
+  disposable domain `dodo-same-version-20260918-a.com`, distributed as 6/6/6/7
+  requests. All 25 requests passed the deployed eight-per-user-per-domain
+  limiter, stayed on the same market version, and produced 25 Dodo Test Mode
+  checkout sessions before the five-minute quote TTL.
+- No checkout's `Pay now` action was submitted. Therefore this is preparation
+  evidence only: no new payment, sale, or refund was created. The strict
+  same-version 25-way payment gate remains **External provider blocked** until
+  the prepared checkouts are paid and fully reconciled under the action-time
+  confirmation requirement.
