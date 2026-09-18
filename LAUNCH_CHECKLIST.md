@@ -52,7 +52,7 @@ browser console errors/warnings were zero.
 | Takeover flow: quote (5-min TTL) → confirm → checkout → atomic finalization | CI verified | `tests/integration/*`, `tests/browser/loop.spec.ts` |
 | Success receipt + share artifacts (X, copy, native share, `?via=` attribution) | CI verified | `tests/browser/loop.spec.ts`, `og.spec.ts` |
 | Priced branding everywhere public | CI verified | `tests/browser/brand.spec.ts` asserts the old name is absent from every surface |
-| UI/device review at 375/430/768/laptop/large | CI verified for the 375/430/768 viewports; real-device check Owner blocked | `tests/browser/responsive.spec.ts`; a real-device eyeball pass remains owner work |
+| UI/device review at 375/430/768/laptop/large | Staging verified for the hosted desktop browser pass; CI verified for the 375/430/768 viewports; real-device check Owner blocked | `tests/browser/responsive.spec.ts`; hosted beta review covered homepage, legal pages, login entry, domain, profile, analytics, and receipt/share routes on 2026-09-18; a real-device eyeball pass remains owner work |
 | OG cards (domain + receipt, Priced branded, prev holder + next price) | CI verified as routes | PNG rendering + headers asserted in `og.spec.ts`; X card validator check is owner-gated |
 
 ## Market correctness (money)
