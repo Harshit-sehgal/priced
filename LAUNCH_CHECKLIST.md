@@ -59,7 +59,7 @@ browser console errors/warnings were zero.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Integer-cent pricing, locked formula ($5 start, max($5, 1%)) | CI verified | `src/lib/game.test.ts` |
+| Integer-cent pricing, pay-what-you-want offers with server-enforced minimum (`$5` first claim; current price + max(`$5`, `1%`) takeover floor) | CI verified | `src/lib/game.test.ts`, `tests/integration/pay-what-you-want.test.ts`, `src/components/TakeoverCTA.tsx` |
 | Version-checked, row-locked atomic `finalize_takeover` RPC | Staging verified | Hosted authenticated-CLI database races produced exactly one winner and `STALE_QUOTE` losers at 10 and 25 requests; the real Supabase REST/service-role harness passed all 8 tests, including race, stale-version, idempotency, wrong-amount, self-takeover, and reserved-domain cases. Dockerized `tests/pg/finalize-rpc.test.ts` remains CI-green. |
 | Immutable sales history (append-only) | CI verified | RPC inserts only; `db/ops.sql` documents correction procedure |
 | In-memory mirror correctness (demo) | CI verified | `tests/integration/concurrency.test.ts` |
