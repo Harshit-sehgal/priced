@@ -547,7 +547,6 @@ This phase is complete only when a real hosted beta environment successfully exe
   the exercised payments. The remaining payment gate is still the clean
   same-version 25-way timing race, which remains **External provider blocked**
   by the deployed quote limiter and five-minute TTL.
-
 ## Latest takeover-funnel verification — 2026-09-18
 
 - The successful-takeover funnel event is now persisted server-side as a
