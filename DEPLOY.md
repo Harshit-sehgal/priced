@@ -90,8 +90,9 @@ code. `.next` is environment-specific; never reuse it across differently
 configured builds.
 
 The CI job also runs `cf:build`, but deliberately without public env: it is a
-compile gate for the Worker adaptation, not a deployable artifact. Production
-deploys must use the exported-variable sequence above.
+compile gate for the Worker adaptation, not a deployable artifact. Beta deploys
+must use the exported-variable sequence above; a future production deployment
+must repeat the same sequence with its production origin.
 
 After a deploy, verify the public dependencies and route contract:
 
@@ -187,7 +188,11 @@ Supabase CLI login and bounded PostgreSQL pool ran 10 first-claim requests and
 `OK` and the remaining `STALE_QUOTE` results, with the expected final version,
 price, and one sale per version. The disposable test rows were removed. This
 proves database-level hosted locking; the REST/service-role harness is also
-verified, while the end-to-end HTTP/payment race remains outstanding.
+verified. The hosted 25-payment batch and terminal-quote payment/refund race
+are now **Staging verified (partial)**; only the strict same-version 25-way
+timing gate remains **External provider blocked** because the deployed
+eight-per-window limiter and five-minute TTL cannot be satisfied by one
+signed-in challenger account.
 
 ## 5. Content + safety pass
 
@@ -250,6 +255,10 @@ Uptime checks (owner, any provider):
 - `.github/workflows/staging-health.yml` runs liveness, Supabase readiness, and
   Redis readiness checks every 15 minutes
   from GitHub Actions and can also be started with `workflow_dispatch`.
+- `.github/workflows/ci.yml` has a separate `Hosted beta smoke` job that runs
+  `npm run smoke:staging` against the stable origin without secrets. Add that
+  job to the protected `main` required-check list after its first successful
+  run; it keeps the hosted contract visible separately from local CI.
   GitHub Actions failure notifications provide a free baseline alert path;
   this does not replace structured-event alerting.
 

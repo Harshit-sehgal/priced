@@ -11,6 +11,14 @@ Workers at `https://priced.harshit10sehgal.workers.dev`. Vercel remains a
 rollback/reference deployment; older Vercel wording in the historical evidence
 below does not identify the active beta origin.
 
+Latest sandbox status (2026-09-18) supersedes older matrix wording below:
+the hosted 25-payment batch completed in Dodo Test Mode with one consumed
+quote/sale, eight stale quotes, sixteen TTL-expired quotes, and 24 succeeded
+refund-ledger rows totaling `$120.00`. A strict same-version 25-way timing
+run remains **External provider blocked** because the deployed eight-per-window
+quote limiter and five-minute TTL cannot be satisfied with one signed-in
+challenger account.
+
 ## Lane A — Owner-gated infra (do first, blocks all real-money verification)
 
 | # | Task | Type | Owner | Notes |
@@ -20,7 +28,7 @@ below does not identify the active beta origin.
 | A3 | Enable **Supabase Realtime**; keep PITR off during free beta and test logical backups before real money | owner | owner | **Staging verified** for a live two-session market update and a hosted logical schema/data dump restored into isolated PostgreSQL 17. Supabase Free Plan explicitly excludes managed project backups; PITR remains off. `DEPLOY.md §7` |
 | A4 | Create one free **Upstash Redis** DB for the designated beta environment and set `UPSTASH_REDIS_REST_URL/TOKEN` there | owner | owner | **Staging verified**: `priced-beta-redis` is wired to the active Cloudflare beta deployment, direct Redis checks pass, and clean concurrent hosted bursts hit every configured user/IP/domain ceiling with the next request returning 429 and no 5xx. Disposable Auth users, profiles, and quotes were removed. `DEPLOY.md §3`; ordinary untrusted previews stay secret-free |
 | A5 | Get **test** credentials + create/reuse approved PWYW one-time product → copy `DODO_PAYMENTS_PRODUCT_ID` | owner | owner | **Staging verified** for configured Dodo Test Mode product and real checkout. `DEPLOY.md §2` · `DODO_COMPLIANCE_GATE.md` |
-| A6 | Add Dodo webhook `https://<domain>/api/webhooks/payments` (test endpoint) → copy `DODO_PAYMENTS_WEBHOOK_KEY` | owner | owner | **Staging verified (partial)**: signed success, failed payment, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, fail-closed synthetic missing-metadata/refund-failure retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, tax-inclusive amount handling, stale/wrong-amount refunds, endpoint delivery reached the hosted endpoint, and the provider-outage path. The endpoint currently subscribes to all 12 required payment, refund, and dispute events; asynchronous refund statuses are fail-closed and reconciled through `refund.succeeded`/`refund.failed`. The outage probe returned hosted `502 checkout_failed` before provider payment creation; the temporary override was removed and normal health/smoke checks passed. A hosted refund-ledger audit found three successful Dodo Test Mode race payments parked in `manual_review` after `INSUFFICIENT_WALLET_FUNDS`; seven other disposable no-quote rows were answered by Dodo as already refunded. The latest Account Statement check shows $5.76 total balance, still insufficient for the remaining refund-heavy race. Dodo documents that refunds use available wallet balance and advises waiting for balance or contacting support. Complete refund closure is **External provider blocked**. The 25-way hosted payment race remains outstanding. Subscribe to `payment.succeeded`, `payment.failed`, `payment.cancelled`, `refund.succeeded`, `refund.failed`, and the seven dispute lifecycle events |
+| A6 | Add Dodo webhook `https://<domain>/api/webhooks/payments` (test endpoint) → copy `DODO_PAYMENTS_WEBHOOK_KEY` | owner | owner | **Staging verified (partial)**: signed success, failed payment, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, fail-closed synthetic missing-metadata/refund-failure retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, tax-inclusive amount handling, stale/wrong-amount refunds, endpoint delivery reached the hosted endpoint, provider-outage handling, a hosted 25-payment batch with exactly one sale and 24 succeeded refunds, and a hosted terminal-quote payment/refund race. The endpoint currently subscribes to all 12 required payment, refund, and dispute events; asynchronous refund statuses are fail-closed and reconciled through `refund.succeeded`/`refund.failed`. The clean same-version 25-way timing gate remains **External provider blocked** because one signed-in account cannot create and pay 25 quotes inside the five-minute TTL under the deployed eight-per-window limiter. Subscribe to `payment.succeeded`, `payment.failed`, `payment.cancelled`, `refund.succeeded`, `refund.failed`, and the seven dispute lifecycle events |
 | A7 | **Cloudflare Workers**: deploy the designated free beta and keep previews secret-free | owner | owner | **Staging verified**: Worker `priced` serves the stable beta origin with Supabase, Dodo Test Mode, and Upstash wired; Vercel remains rollback-only. `DEPLOY.md §3` |
 | A8 | Set `SENTRY_DSN` + persistent error alerting + `/api/health` uptime check; alert on `refund_failed`, `takeover_finalization_error`, `webhook_*_failed`, `webhook_signature_invalid` spikes | owner | owner | **Implemented (partial)**: `.github/workflows/staging-health.yml` checks Cloudflare liveness, Supabase readiness, and Redis readiness every 15 minutes with GitHub Actions failure notifications. Persistent structured-error alert routing still needs an authorized destination; Cloudflare live tail is available for diagnostics. `DEPLOY.md §8` |
 | A9 | Turnstile widget (optional) + Dodo fraud/risk features in dashboard | owner | owner | `DEPLOY.md §3` |
@@ -29,7 +37,7 @@ below does not identify the active beta origin.
 
 | # | Task | Type | Depends | How |
 |---|------|------|---------|-----|
-| B1 | **Dodo sandbox matrix** (§76 gate) — complete cancel/duplicate/stale/simultaneous/refund-failure/missing-metadata/wrong-amount/outage cases on the hosted beta with test keys | verify | A5–A7 | **Staging verified (partial)** for success/fail/signed webhook/duplicate replay/provider replay with HTTP 200/synthetic `payment.failed` and `payment.cancelled` delivery with HTTP 200/a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200/fail-closed synthetic missing-metadata/refund-failure retry behavior/a real missing-metadata payment with successful full refund and no matching sale/cancelled-checkout UI/atomic finalization, tax-inclusive amount handling, stale/wrong-amount refunds, and provider outage. The outage probe returned hosted `502 checkout_failed` before provider payment creation; the temporary override was removed and normal health/smoke checks passed. A hosted refund-ledger audit found three successful Dodo Test Mode race payments parked in `manual_review` after `INSUFFICIENT_WALLET_FUNDS`; seven other disposable no-quote rows were answered by Dodo as already refunded. The latest Test Mode Account Statement check shows $5.76 total balance. Dodo documents that refunds use available wallet balance and advises waiting for balance or contacting support. Complete refund closure is **External provider blocked**. The 25-way hosted payment race remains outstanding. |
+| B1 | **Dodo sandbox matrix** (§76 gate) — complete cancel/duplicate/stale/simultaneous/refund-failure/missing-metadata/wrong-amount/outage cases on the hosted beta with test keys | verify | A5–A7 | **Staging verified (partial)** for success/fail/signed webhook/duplicate replay/provider replay with HTTP 200/synthetic `payment.failed` and `payment.cancelled` delivery with HTTP 200/a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200/fail-closed synthetic missing-metadata/refund-failure retry behavior/a real missing-metadata payment with successful full refund and no matching sale/cancelled-checkout UI/atomic finalization, tax-inclusive amount handling, stale/wrong-amount refunds, provider outage, a hosted 25-payment batch with exactly one sale and 24 succeeded refunds, and a hosted terminal-quote payment/refund race. The clean same-version 25-way timing gate remains **External provider blocked** because one signed-in account cannot create and pay 25 quotes inside the five-minute TTL under the deployed eight-per-window limiter. |
 | B2 | **Real Postgres concurrency** — run `tests/integration/postgres.finalize.test.ts` against the real Priced Supabase project | verify | A1 | **Staging verified**: the real service-role harness passed all 8 tests, and a bounded hosted database pool separately submitted 10 first claims (1 `OK`, 9 `STALE_QUOTE`) and 25 held-domain takeovers (1 `OK`, 24 `STALE_QUOTE`), then cleaned both test domains. The protected key was held transiently in memory and never printed or stored. `npm run test:postgres` now points to the correct integration harness; hosted logical backup dump/restore is documented in `DEPLOY.md §7`. |
 | B3 | **Staging smoke** — health, analytics taxonomy, CSRF guards, auth redirect, routing | verify | A7 | **Staging verified**: `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging` passes all 10 checks, including the custom 404 route and every public HTML route |
 | B4 | **Realtime** + browser loop on staging — search → domain → quote → checkout → webhook → sale → receipt → profile → market update → share | verify | A1–A7 | **Staging verified** for hosted success journey, profile, analytics, receipt, share, and live two-session Realtime update; the full payment/race matrix remains. `tests/browser/loop.spec.ts` against `STAGING_URL` + manual check |
@@ -53,7 +61,7 @@ below does not identify the active beta origin.
 | C12 | Repository cleanup: PR #1 closed as superseded, stale branches removed, old repo refs updated | code/admin | `.github/BRANCH_PROTECTION.md`, docs | ✅ |
 
 Remaining optional code follow-ups (pick up if time, not blocking launch):
-- Add `STAGING_URL` smoke as a required GitHub check against the Cloudflare beta origin (manual `workflow_dispatch` is available; a scheduled job needs no preview plumbing).
+- Add `STAGING_URL` smoke as a required GitHub check against the Cloudflare beta origin. **Implemented** as the separate `Hosted beta smoke` job in `.github/workflows/ci.yml`; add that job to the GitHub branch-protection required-check list after its first run.
 - Promote in-memory concurrency tests to run against a throwaway Supabase in CI nightly (needs `SUPABASE_SERVICE_ROLE_KEY` secret).
 
 ## Lane C2 — Money-path hardening follow-ups (deep-scan findings, 2026-09-12)
@@ -173,6 +181,46 @@ CI verified: typecheck + lint + 258 tests + 35 pg tests + schema equivalence + 1
 | D4 | Public announcement | owner | Only after §76 gate + D1–D3 |
 | D5 | **Analytics retention enforcement** — add repo secrets `SUPABASE_PROJECT_URL` + `SUPABASE_SERVICE_ROLE_KEY` and get `.github/workflows/analytics-retention.yml` merged to the default branch | verify | **Staging verified**: secrets are configured, the workflow is merged to `main`, and manual run `34771269757` completed successfully against the hosted Supabase project (`0` expired rows deleted). `DEPLOY.md §9` |
 | D6 | **Post-sale reservation refunds** — decide whether the operator refund on a held-tag reservation becomes tooling or stays a documented manual provider refund | owner | Terms §7 promises the last payment back; `db/ops.sql` documents the manual query/refund/audit procedure. No automated money path exists by design |
+
+## 2026-09-17 sandbox reconciliation
+
+The three previously blocked disposable stale-race refunds were completed in
+Dodo Test Mode after sandbox top-up checkouts. Three corresponding hosted
+refund ledger rows are now `succeeded`; seven older provider-
+`PAYMENT_ALREADY_REFUNDED` `unknown_quote` rows remain `manual_review`, and one
+older row is `failed` with the same explicit provider error, pending an
+authoritative signed refund event. The 25-way hosted HTTP/payment race remains
+**External provider blocked** because its 24 stale refunds would require approximately `$144` of
+Test Mode wallet capacity at the observed debit per refund.
+
+## 2026-09-18 hosted payment race reconciliation
+
+The fresh disposable tag `dodo-http-race-20260918-c.com` accepted 25
+successful Dodo Test Mode provider payments. The hosted application and
+Supabase ledger recorded exactly one consumed quote/sale (`@harshit`, `$5`,
+version 1), eight stale quotes, and sixteen quotes that expired at the
+five-minute TTL while the eight-per-window quote limiter was respected. The
+24 non-winning payments each have a `succeeded` Dodo refund-ledger row,
+totaling `$120.00`, and none has a sale. The refreshed Dodo Test Mode balance
+was `$64.13` after the one previously wallet-blocked legacy payment was also
+fully refunded from the dashboard and is now `$66.67` after the later
+terminal-quote payment/refund check. The seven other legacy rows have explicit
+`PAYMENT_ALREADY_REFUNDED` provider responses and no sale; they remain
+bookkeeping-only `manual_review` rows until signed provider refund events
+arrive.
+
+A separate hosted terminal-quote check on
+`dodo-http-terminal-20260918.com` paid one quote to `consumed` and then paid a
+competing quote through its already-created Dodo Test Mode checkout. The
+competing return was `stale`, the `$5.00` refund ledger row became `succeeded`,
+and no second sale was created. This covers the terminal-quote payment/refund
+race through the hosted checkout and signed webhook path.
+
+This is **Staging verified (partial)** for the hosted 25-payment/refund path
+and exactly-once finalization. The strict same-version 25-way timing gate is
+still **External provider blocked** until the run can use distinct signed-in
+challengers or an equivalent controlled setup that keeps every quote inside
+the five-minute TTL. Do not weaken the deployed rate limits or quote rules.
 
 ## Quick start for a new agent
 
