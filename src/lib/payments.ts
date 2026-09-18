@@ -495,7 +495,7 @@ function verifyStripeWebhookInternal(
  * Dodo Payments — the launch provider.
  *
  * One-time dynamic pricing via a single Pay-What-You-Want product
- * (DODO_PAYMENTS_PRODUCT_ID): each quote passes its exact next price as
+ * (DODO_PAYMENTS_PRODUCT_ID): each quote passes the buyer's exact selected offer as
  * `product_cart[0].amount` in minor units, so no per-domain product is needed.
  * Webhooks follow the Standard Webhooks spec
  * (webhook-id / webhook-timestamp / webhook-signature headers, HMAC-SHA256

@@ -188,10 +188,20 @@ test("wrong price is rejected with WRONG_PRICE", { skip: !hasDocker }, async () 
   const userId = await seedProfile("rpc-price");
   const out = await finalize({
     domain: "rpc-price.com", buyerUserId: userId, buyerHandle: "rpc-price",
-    expectedVersion: 0, paidCents: 999, providerPaymentId: "pi-rpc-price-1",
+    expectedVersion: 0, paidCents: 499, providerPaymentId: "pi-rpc-price-1",
   });
   assert.ok(!out.ok);
   assert.equal(out.code, "WRONG_PRICE");
+});
+
+test("a higher first-claim offer is accepted and becomes the stored price", { skip: !hasDocker }, async () => {
+  const userId = await seedProfile("rpc-high-offer");
+  const out = await finalize({
+    domain: "rpc-high-offer.com", buyerUserId: userId, buyerHandle: "rpc-high-offer",
+    expectedVersion: 0, paidCents: 1250, providerPaymentId: "pi-rpc-high-offer-1",
+  });
+  assert.ok(out.ok);
+  if (out.ok) assert.equal(out.sale.price_cents, "1250");
 });
 
 // `x <> NULL` is NULL, which an `if` treats as false — so a NULL argument used

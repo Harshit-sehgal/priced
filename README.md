@@ -14,10 +14,10 @@ Nobody receives the real domain, website, company, trademark, IP, equity, DNS co
 
 1. Search any valid domain.
 2. See its current symbolic holder and current price.
-3. Take it for the required next price.
+3. Enter an offer at or above the required minimum.
 4. The successful buyer becomes the new holder.
 5. Share the takeover publicly.
-6. Someone else can take it later by paying the next price.
+6. Someone else can take it later by entering a higher offer.
 
 ## Pricing
 
@@ -25,10 +25,10 @@ Unclaimed domains start at **$5**.
 
 ```text
 increment = max($5, 1% of current price)
-next price = current price + increment
+minimum takeover offer = current price + increment
 ```
 
-The challenger pays the **full next price**, not only the increment. Money is stored as integer cents.
+The buyer may pay more than the minimum; their selected offer becomes the new tag price. Money is stored as integer cents.
 
 ## Repository status
 

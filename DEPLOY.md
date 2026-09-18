@@ -41,7 +41,7 @@ because they need accounts, credentials and a legal review.
 1. Dodo product verification/approval for Priced is already confirmed by the
    owner. Do not repeat the eligibility investigation unless Dodo requests it.
 2. Create or reuse a **one-time product with Pay-What-You-Want enabled** (min $5.00,
-   no low max — each quote passes its exact next price as the cart `amount`).
+   no low max — each quote passes the buyer's exact selected offer as the cart `amount`).
    Copy its product id → `DODO_PAYMENTS_PRODUCT_ID`.
 3. Copy from the Dodo dashboard:
    - `DODO_PAYMENTS_API_KEY` (test key first, live key later — never mix)

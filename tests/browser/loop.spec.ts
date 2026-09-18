@@ -12,13 +12,13 @@ test.describe("full takeover loop (demo mode)", () => {
     await page.getByRole("search").getByRole("button", { name: "Price it" }).click();
     await expect(page).toHaveURL(new RegExp(`/domain/${domain}$`));
 
-    // Unclaimed state and $5 claim.
+    // Unclaimed state and the $5 minimum offer.
     await expect(page.getByText("Nobody holds this tag yet.")).toBeVisible();
-    await page.getByRole("button", { name: /Claim for \$5/ }).click();
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
 
     // Server-authoritative quote confirmation page.
     await expect(page).toHaveURL(/\/takeover\//);
-    await expect(page.getByText("First claim. You set the opening price.")).toBeVisible();
+    await expect(page.getByText("First claim. You choose the opening price.")).toBeVisible();
     await expect(page.getByText("You are buying:")).toBeVisible();
 
     // Demo checkout (drives the real signed-webhook path).
@@ -41,7 +41,7 @@ test.describe("full takeover loop (demo mode)", () => {
     await page.getByRole("link", { name: "Defend it · view the tag" }).click();
     await expect(page).toHaveURL(new RegExp(`/domain/${domain}$`));
     await expect(page.getByText("@smoketest").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Take it for \$10/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
   });
 
   test("declined payment keeps the tag unclaimed", async ({ page }) => {
@@ -49,7 +49,7 @@ test.describe("full takeover loop (demo mode)", () => {
     await handleFor(page.request);
 
     await page.goto(`/domain/${domain}`);
-    await page.getByRole("button", { name: /Claim for \$5/ }).click();
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
     await expect(page).toHaveURL(/\/takeover\//);
     await page.getByRole("button", { name: "Continue to payment" }).click();
     await expect(page).toHaveURL(/\/checkout\/mock/);
@@ -69,7 +69,7 @@ test.describe("holder profiles (/u/[handle])", () => {
     await handleFor(page.request);
 
     await page.goto(`/domain/${domain}`);
-    await page.getByRole("button", { name: /Claim for \$5/ }).click();
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
     await page.getByRole("button", { name: "Continue to payment" }).click();
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
@@ -99,9 +99,9 @@ test.describe("mobile viewport (§32)", () => {
     await page.goto("/domain/openai.com");
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("openai.com");
     await expect(page.getByText("@latentspace").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Take it for \$949\.40/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
     // CTA is comfortably within the first two viewports.
-    const cta = page.getByRole("button", { name: /Take it for \$949\.40/ });
+    const cta = page.getByRole("button", { name: "Continue with this offer" });
     await expect(cta).toBeInViewport({ ratio: 0.5 });
   });
 });

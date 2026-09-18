@@ -36,8 +36,8 @@ export default async function Home() {
         <p className="eyebrow">Priced</p>
         <h1 className="display display-hero">How much is the internet worth?</h1>
         <p className="muted" style={{ maxWidth: 640, margin: 0 }}>
-          Every domain has a price now. Somebody holds each tag until someone pays the next
-          price and takes it. <strong>Not the actual domain.</strong> Just the tag.
+          Every domain has a price now. Somebody holds each tag until someone makes a higher
+          offer and takes it. <strong>Not the actual domain.</strong> Just the tag.
         </p>
         <SearchBar />
       </section>

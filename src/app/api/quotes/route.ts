@@ -37,10 +37,11 @@ export async function POST(req: Request) {
   if (!allowedIdentity) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
   let domain: string | undefined;
+  let offerCents: number | undefined;
   try {
     const raw = await req.text();
     if (raw.length > 4_096) return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
-    const body = JSON.parse(raw || "{}") as { domain?: unknown };
+    const body = JSON.parse(raw || "{}") as { domain?: unknown; amountCents?: unknown };
     // Type-check BEFORE normalizeDomain: a non-string shape (number/object)
     // used to throw `input.trim is not a function` outside the error mapping,
     // surfacing as an unauthenticated 500 instead of a 400.
@@ -48,6 +49,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "domain_required" }, { status: 400 });
     }
     domain = body.domain;
+    if (body.amountCents !== undefined) {
+      if (typeof body.amountCents !== "number" || !Number.isSafeInteger(body.amountCents) || body.amountCents <= 0) {
+        return NextResponse.json({ error: "amount_invalid" }, { status: 400 });
+      }
+      offerCents = body.amountCents;
+    }
   } catch {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
@@ -68,14 +75,14 @@ export async function POST(req: Request) {
   }
 
   try {
-    const quote = await createQuote(domain, user.id);
+    const quote = await createQuote(domain, user.id, offerCents);
     await persistAnalyticsEvent({
       event: "quote_created",
       domain: quote.domain,
       userId: user.id,
-      props: { next_price_cents: quote.nextPriceCents },
+      props: { minimum_price_cents: quote.minimumPriceCents, offer_price_cents: quote.nextPriceCents },
     });
-    return NextResponse.json({ quoteId: quote.id, nextPriceCents: quote.nextPriceCents });
+    return NextResponse.json({ quoteId: quote.id, minimumPriceCents: quote.minimumPriceCents, nextPriceCents: quote.nextPriceCents });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (msg === "PROFILE_REQUIRED" || msg.startsWith("PROFILE")) {
@@ -83,6 +90,12 @@ export async function POST(req: Request) {
     }
     if (msg === "ALREADY_HOLDER") {
       return NextResponse.json({ code: "ALREADY_HOLDER", error: "you already hold this tag" }, { status: 409 });
+    }
+    if (msg === "INVALID_OFFER") {
+      return NextResponse.json({ code: "INVALID_AMOUNT", error: "enter a valid positive amount in cents" }, { status: 400 });
+    }
+    if (msg === "OFFER_TOO_LOW") {
+      return NextResponse.json({ code: "OFFER_TOO_LOW", error: "your offer is below the current minimum" }, { status: 422 });
     }
     if (msg.startsWith("DOMAIN_INELIGIBLE")) {
       return NextResponse.json({ code: "INELIGIBLE", error: msg }, { status: 422 });

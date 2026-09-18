@@ -57,13 +57,16 @@ function client(): SupabaseClient {
 
 // ----------------------------------------------------------------- row mapping
 function toQuote(row: Record<string, unknown>): RepoQuote {
+  const currentPriceCents = Number(row.current_price_cents);
+  const requiredIncrementCents = Number(row.required_increment_cents);
   return {
     id: String(row.id),
     domain: String(row.domain),
     buyerUserId: String(row.buyer_user_id),
     expectedVersion: Number(row.expected_version),
-    currentPriceCents: Number(row.current_price_cents),
-    requiredIncrementCents: Number(row.required_increment_cents),
+    currentPriceCents,
+    requiredIncrementCents,
+    minimumPriceCents: currentPriceCents + requiredIncrementCents,
     nextPriceCents: Number(row.next_price_cents),
     expiresAt: String(row.expires_at),
     status: String(row.status),
@@ -406,7 +409,7 @@ export async function marketValueCents(): Promise<number> {
 }
 
 // ------------------------------------------------------------------- quotes
-export async function createQuote(domainInput: string, buyerUserId: string): Promise<RepoQuote> {
+export async function createQuote(domainInput: string, buyerUserId: string, offerCents?: number): Promise<RepoQuote> {
   const domain = requireEligibleDomain(domainInput);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + QUOTE_TTL_MS).toISOString();
@@ -431,6 +434,9 @@ export async function createQuote(domainInput: string, buyerUserId: string): Pro
     version: current.version,
     history: [],
   });
+  const selectedPriceCents = offerCents ?? quote.nextPriceCents;
+  if (!Number.isSafeInteger(selectedPriceCents) || selectedPriceCents <= 0) throw new Error("INVALID_OFFER");
+  if (selectedPriceCents < quote.nextPriceCents) throw new Error("OFFER_TOO_LOW");
   const { data: inserted, error: insErr } = await client()
     .from("quotes")
     .insert({
@@ -439,7 +445,7 @@ export async function createQuote(domainInput: string, buyerUserId: string): Pro
       expected_version: current.version,
       current_price_cents: current.priceCents,
       required_increment_cents: quote.requiredIncrementCents,
-      next_price_cents: quote.nextPriceCents,
+      next_price_cents: selectedPriceCents,
       expires_at: expiresAt,
       status: "active",
     })

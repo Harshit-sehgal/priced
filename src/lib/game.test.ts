@@ -15,6 +15,13 @@ test("unclaimed domains start at $5", () => {
   assert.equal(quoteFor(record(0, null, 0)).nextPriceCents, 500);
 });
 
+test("a first claim may offer more than the $5 minimum", () => {
+  const base = record(0, null, 0);
+  const result = applyTakeover(base, "@new", 0, 1250);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.record.priceCents, 1250);
+});
+
 test("$5 minimum increment wins below $500", () => {
   assert.equal(quoteFor(record(9400)).nextPriceCents, 9900);
 });
@@ -48,6 +55,17 @@ test("domain validation rejects malformed hostnames", () => {
 
 test("$4,280 becomes $4,322.80", () => {
   assert.equal(quoteFor(record(428000)).nextPriceCents, 432280);
+});
+
+test("offers below the computed minimum are rejected", () => {
+  const result = applyTakeover(record(500, "@old", 1), "@new", 1, 999);
+  assert.deepEqual(result, { ok: false, code: "WRONG_PRICE" });
+});
+
+test("a takeover offer may exceed the computed minimum", () => {
+  const result = applyTakeover(record(500, "@old", 1), "@new", 1, 2500);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.record.priceCents, 2500);
 });
 
 test("current holder cannot take over their own tag", () => {

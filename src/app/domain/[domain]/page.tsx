@@ -150,7 +150,7 @@ export default async function DomainPage({ params }: Params) {
                 Nobody holds this tag yet. First claim sets the market.
               </p>
               <div className="row-split">
-                <span className="eyebrow">First claim</span>
+                <span className="eyebrow">Minimum first claim</span>
                 <span className="money money-big">{money(quote.nextPriceCents)}</span>
               </div>
               <TakeoverCTA
@@ -187,12 +187,12 @@ export default async function DomainPage({ params }: Params) {
             <div className="panel">
               <div className="panel-header">
                 <span className="eyebrow">Next takeover</span>
-                <span className="small muted">one price, no bidding</span>
+                <span className="small muted">pay what you want above the minimum</span>
               </div>
               <div className="panel-body stack">
                 <div className="row-split">
                   <span className="money money-big money-up">{money(quote.nextPriceCents)}</span>
-                  <span className="small muted">pays the full new price; previous holder gets nothing</span>
+                  <span className="small muted">minimum offer; previous holder gets nothing</span>
                 </div>
                 <TakeoverCTA
                   domain={canonical}

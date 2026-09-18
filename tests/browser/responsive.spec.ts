@@ -37,14 +37,15 @@ test.describe("375px phone", () => {
     await page.goto(`/domain/${domain}`);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(domain);
     await expect(page.getByText("Nobody holds this tag yet.")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Claim for \$5/ })).toBeVisible();
+    await expect(page.getByLabel(new RegExp(`Your offer for ${domain}`))).toHaveValue("5.00");
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
   test("large holder price ($4,280) fits without overflow", async ({ page }) => {
     await page.goto("/domain/google.com");
     await expect(page.getByText("$4,280", { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Take it for/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
@@ -52,7 +53,7 @@ test.describe("375px phone", () => {
     const domain = longDomain();
     await handleFor(page.request);
     await page.goto(`/domain/${domain}`);
-    await page.getByRole("button", { name: /Claim for \$5/ }).click();
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
     await expect(page).toHaveURL(/\/takeover\//);
     await page.getByRole("button", { name: "Continue to payment" }).click();
     await expect(page).toHaveURL(/\/checkout\/mock/);
@@ -75,7 +76,7 @@ test.describe("430px phone", () => {
     const domain = longDomain();
     await page.goto(`/domain/${domain}`);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(domain);
-    await expect(page.getByRole("button", { name: /Claim for \$5/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
 
@@ -118,14 +119,14 @@ test.describe("long domain through the loop", () => {
     const domain = uniqueDomain();
     await handleFor(page.request);
     await page.goto(`/domain/${domain}`);
-    await page.getByRole("button", { name: /Claim for \$5/ }).click();
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
     await page.getByRole("button", { name: "Continue to payment" }).click();
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
     await page.getByRole("link", { name: "Defend it · view the tag" }).click();
     await expect(page).toHaveURL(new RegExp(`/domain/${domain}$`));
     await expect(page.getByText("@smoketest").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: /Take it for \$10/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
   });
 });
 

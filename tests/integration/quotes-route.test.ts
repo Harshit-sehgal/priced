@@ -32,3 +32,11 @@ test("quotes: a string domain reaches quote creation in demo mode", async () => 
   assert.equal(res.status, 409);
   assert.deepEqual(res.body, { code: "NO_HANDLE", error: "handle_required" });
 });
+
+test("quotes: amount must be a positive integer number of cents", async () => {
+  let n = 60;
+  for (const amountCents of [0, -1, 5.5, "1250", null, {}, []]) {
+    const res = (await quotesPOST(post({ domain: "example.com", amountCents }, `10.20.0.${++n}`))) as StubResponse;
+    assert.equal(res.status, 400, `expected 400 for amount ${JSON.stringify(amountCents)}`);
+  }
+});

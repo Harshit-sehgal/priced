@@ -6,7 +6,7 @@
 // behaviour production never applies. Where a branch below mirrors a database
 // constraint or the SQL finalizer, the comment says so — keep them in step.
 import "server-only";
-import { normalizeDomain, quoteFor } from "../game.ts";
+import { isValidOfferCents, normalizeDomain, quoteFor } from "../game.ts";
 import { requireEligibleDomain } from "../domains.ts";
 import {
   CONTESTED_SALES_SAMPLE_LIMIT,
@@ -256,7 +256,7 @@ export async function marketValueCents(): Promise<number> {
 }
 
 // ------------------------------------------------------------------- quotes
-export async function createQuote(domainInput: string, buyerUserId: string): Promise<RepoQuote> {
+export async function createQuote(domainInput: string, buyerUserId: string, offerCents?: number): Promise<RepoQuote> {
   const domain = requireEligibleDomain(domainInput);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + QUOTE_TTL_MS).toISOString();
@@ -270,6 +270,9 @@ export async function createQuote(domainInput: string, buyerUserId: string): Pro
   };
   if (current.holderUserId && current.holderUserId === buyerUserId) throw new Error("ALREADY_HOLDER");
   const q = quoteFor({ domain, holder: current.holderHandle, priceCents: current.priceCents, version: current.version, history: [] });
+  const selectedPriceCents = offerCents ?? q.nextPriceCents;
+  if (!isValidOfferCents(selectedPriceCents)) throw new Error("INVALID_OFFER");
+  if (selectedPriceCents < q.nextPriceCents) throw new Error("OFFER_TOO_LOW");
   const id = crypto.randomUUID();
   const quote: RepoQuote = {
     id,
@@ -278,7 +281,8 @@ export async function createQuote(domainInput: string, buyerUserId: string): Pro
     expectedVersion: current.version,
     currentPriceCents: current.priceCents,
     requiredIncrementCents: q.requiredIncrementCents,
-    nextPriceCents: q.nextPriceCents,
+    minimumPriceCents: q.nextPriceCents,
+    nextPriceCents: selectedPriceCents,
     expiresAt,
     status: "active",
     createdAt: now.toISOString(),
@@ -382,7 +386,7 @@ export async function finalizeTakeover(input: FinalizeInput): Promise<TakeoverOu
     version: d.version,
     history: [],
   }).nextPriceCents;
-  if (input.paidCents !== required) return { ok: false, code: "WRONG_PRICE" };
+  if (!Number.isSafeInteger(input.paidCents) || input.paidCents < required) return { ok: false, code: "WRONG_PRICE" };
 
   const sale: RepoSale = {
     id: crypto.randomUUID(),

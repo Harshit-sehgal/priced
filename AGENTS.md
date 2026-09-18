@@ -21,7 +21,7 @@ Product name: `Priced`
 
 Repository: `Harshit-sehgal/priced`
 
-Priced is a competitive internet product where a user can pay the displayed takeover price to become the current symbolic holder of a familiar domain tag inside Priced.
+Priced is a competitive internet product where a user can choose an offer at or above the displayed minimum takeover price to become the current symbolic holder of a familiar domain tag inside Priced.
 
 The purchase does not transfer the real domain, DNS control, website ownership, trademark rights, company ownership, equity, affiliation, endorsement, intellectual property, or authority to represent the real domain owner.
 
@@ -37,17 +37,17 @@ Follow-up product ideas such as collections, achievements, trending exposure, an
 
 ## Locked market mechanics
 
-Unclaimed price: `$5.00`
+Unclaimed minimum offer: `$5.00`
 
 Increment:
 
 `max($5, 1% of current price)`
 
-Next takeover price:
+Minimum takeover offer:
 
 `current price + increment`
 
-The challenger pays the full next price.
+The buyer may enter any higher amount. The selected offer becomes the new displayed price; no amount below the server-computed minimum is accepted.
 
 Money is stored as integer cents. If the 1 percent increment produces a fractional cent, round the increment up to the next cent.
 

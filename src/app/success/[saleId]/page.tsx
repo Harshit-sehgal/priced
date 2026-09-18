@@ -98,7 +98,7 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
         </p>
         {stillHolder ? (
           <p className="small" style={{ margin: 0 }}>
-            Next challenge price: <span className="money money-up">{money(next.nextPriceCents)}</span>
+            Next challenge minimum: <span className="money money-up">{money(next.nextPriceCents)}</span>
           </p>
         ) : unavailable ? (
           <p className="small muted" style={{ margin: 0 }}>
@@ -125,7 +125,7 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
         website&apos;s price tag for {sale.domain}. The previous holder received nothing.{" "}
         {unavailable
           ? "The tag was later reserved by the operator and can no longer be challenged."
-          : `Anyone can take the tag from you by paying ${money(next.nextPriceCents)}.`}
+          : `Anyone can take the tag from you by offering at least ${money(next.nextPriceCents)}.`}
       </section>
 
       <div className="row-split">
