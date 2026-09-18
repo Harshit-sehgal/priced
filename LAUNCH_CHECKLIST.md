@@ -143,7 +143,12 @@ browser console errors/warnings were zero.
 Track via existing `analytics_events` (all real, SQL-counted):
 `domain_searched → domain_opened → takeover_clicked → quote_created → checkout_started → payment_succeeded → takeover_succeeded → share_clicked → share_visit → (challenger) takeover_clicked…`
 
-The one number that matters: repeat takeover rate — share of takeovers whose buyer previously arrived via a `share_visit`. SQL for it exists conceptually in the funnel events; a beta dashboard query should be written when staging data exists (P2 until then).
+The one number that matters: repeat takeover rate — share of takeovers whose
+buyer previously arrived via a `share_visit`. `takeover_succeeded` is now
+persisted server-side and is **Staging verified** on the active beta. A true
+repeat-takeover query remains deferred until share attribution is explicit:
+the current server-rendered `share_visit` sink is intentionally anonymous, so
+the metric must not infer buyer attribution from a domain/time coincidence.
 
 ## 2026-09-18 hosted payment reconciliation
 

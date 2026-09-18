@@ -547,3 +547,21 @@ This phase is complete only when a real hosted beta environment successfully exe
   the exercised payments. The remaining payment gate is still the clean
   same-version 25-way timing race, which remains **External provider blocked**
   by the deployed quote limiter and five-minute TTL.
+
+## Latest takeover-funnel verification — 2026-09-18
+
+- The successful-takeover funnel event is now persisted server-side as a
+  best-effort analytics write after the atomic quote/sale commit. Analytics
+  failure cannot fail or retry the money webhook; duplicate deliveries do not
+  emit a second event.
+- The merged build was deployed to the active Worker as version
+  `a261203e-8184-4e9c-8698-210793a10e93`. A fresh Dodo Test Mode checkout for
+  `analytics-beta-20260918-e.com` returned `succeeded`, the hosted return page
+  showed `@harshit` holding the tag at `$5.00`, and a hosted Supabase query
+  found exactly one `takeover_succeeded` row with `price_cents=500` and no
+  previous holder. No live mode or real-money charge was used.
+- This is **Staging verified** for the persisted successful-takeover event.
+  The repeat-takeover metric still needs explicit share attribution between a
+  `share_visit` and a later buyer; the current view sink intentionally stores
+  anonymous share visits, so that attribution must not be inferred from a
+  mere domain/time match.
