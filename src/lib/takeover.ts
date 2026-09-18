@@ -14,6 +14,7 @@ import {
   type TakeoverOutcome,
 } from "./repo.ts";
 import { logEvent } from "./logger.ts";
+import { persistAnalyticsEvent } from "./analytics-server.ts";
 // Static: payments.ts imports repo/demo-secret only, never takeover, so there
 // is no cycle to break here. The heavy Stripe SDK is still lazy — payments.ts
 // dynamically imports it inside loadStripe().
@@ -281,6 +282,19 @@ export async function processSucceededPayment(args: {
       return { outcome: "duplicate", saleId: outcome.sale.id, reason: "quote_already_consumed" };
     }
     await markQuoteStatus(quote.id, "consumed");
+    // Product measurement only: the sale and quote are already authoritative
+    // above. This best-effort funnel write must never turn a successful money
+    // operation into a webhook failure or affect retry/idempotency behavior.
+    await persistAnalyticsEvent({
+      event: "takeover_succeeded",
+      domain: quote.domain,
+      handle: outcome.sale.buyerHandle,
+      userId: quote.buyerUserId,
+      props: {
+        price_cents: outcome.sale.priceCents,
+        previous_holder: outcome.sale.previousHolderHandle,
+      },
+    });
     logEvent("takeover_succeeded", "info", { provider: args.provider, payment_id: args.paymentId, quote_id: quote.id, domain: quote.domain, price_cents: outcome.sale.priceCents, buyer: outcome.sale.buyerHandle, sale_id: outcome.sale.id });
     return { outcome: "processed", saleId: outcome.sale.id };
   }

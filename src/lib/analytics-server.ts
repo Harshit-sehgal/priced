@@ -30,9 +30,12 @@ export type PersistArgs = {
 
 /** Best-effort insert — never throws. Callers must not fail on analytics. */
 export async function persistAnalyticsEvent(args: PersistArgs): Promise<void> {
-  const c = client();
-  if (!c) return;
   try {
+    // Keep client construction inside the best-effort boundary too. A bad or
+    // partially configured deployment must never turn a committed payment or
+    // takeover into a webhook retry.
+    const c = client();
+    if (!c) return;
     await c.from("analytics_events").insert({
       event: args.event,
       session_id: args.sessionId ?? null,
