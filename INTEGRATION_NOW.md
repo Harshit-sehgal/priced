@@ -584,13 +584,14 @@ This phase is complete only when a real hosted beta environment successfully exe
 - Eight disposable `$10.00` Test Mode purchases completed through the active
   beta origin on separate `sandbox-topup-20260918-*` tags. Dodo recorded
   `$11.80` per India-address checkout (`$10.00` market amount plus `$1.80`
-  GST), with no live-mode or real-money charge involved. A ninth checkout is
-  prepared but has not been submitted.
+  GST), with no live-mode or real-money charge involved. A ninth checkout was
+  prepared but expired/returned with `requires_payment_method`; it was not
+  submitted, and the balance remains `$142.46`.
 - A clean same-version 25-way timing race would create 24 stale-payment
   refunds. At the observed approximately `$6` wallet debit per completed
-  refund, that needs roughly `$144` before reserve, so the gate remains
-  **External provider blocked** until the pending sandbox top-up is submitted
-  and the race can be run with all quotes inside the five-minute TTL. The
-  deployed eight-per-window quote limiter and one signed-in challenger account
-  still prevent a clean same-version 25-way timing run without a controlled
-  multi-account setup; those controls must not be weakened.
+  refund, that needs roughly `$144` before reserve. The gate remains
+  **External provider blocked** pending a confirmed additional sandbox
+  top-up and a controlled setup that keeps all quotes inside the five-minute
+  TTL. The deployed eight-per-window quote limiter and one signed-in
+  challenger account still prevent a clean same-version 25-way timing run;
+  those controls must not be weakened.
