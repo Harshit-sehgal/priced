@@ -68,8 +68,12 @@ export async function POST(req: Request) {
       webhookTimestamp: req.headers.get("webhook-timestamp"),
     });
     if (!stale.ok) {
-      logEvent("webhook_signature_invalid", "warn", { provider: provider.name, reason: verification.reason });
-      return Response.json({ error: "invalid_signature", reason: verification.reason }, { status: 400 });
+      // The first verification only tells us that the timestamp is old; it
+      // deliberately skips HMAC work. `parseStaleWebhookEvent` re-verifies
+      // with freshness disabled, so report its result rather than leaking the
+      // pre-filter's `stale_timestamp` reason for a forged delivery.
+      logEvent("webhook_signature_invalid", "warn", { provider: provider.name, reason: stale.reason });
+      return Response.json({ error: "invalid_signature", reason: stale.reason }, { status: 400 });
     }
     logEvent("webhook_stale_but_signed", "warn", {
       provider: provider.name,
