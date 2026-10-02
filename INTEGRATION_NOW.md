@@ -39,6 +39,12 @@ hosted secret/credential steps remain **Owner blocked**.
   `eslint-config-next` to `16.3.8` and ran `npm audit fix` for the remaining
   dev-only advisories; `npm audit --omit=dev` and the full `npm audit` now both
   report **0 vulnerabilities**.
+- **Supply-chain watching on:** repository Dependabot/vulnerability alerts had
+  been disabled; they are now enabled. They surface one dev-only,
+  auto-dismissed advisory (`braces@3.0.3`, GHSA-vfj7-8cjw-p6xm) reachable only
+  through `eslint-config-next` → `fast-glob` → `micromatch`. It has no patched
+  release yet and is not in the runtime bundle; `npm audit` reports 0
+  vulnerabilities. No action is available or required.
 - **Alerting made real:** `src/lib/logger.ts` previously only *attempted* a
   Sentry forward via a dynamic import of `@sentry/nextjs`, which is **not a
   dependency** — so a production `refund_failed` produced a log line and
@@ -52,7 +58,13 @@ hosted secret/credential steps remain **Owner blocked**.
   30 minutes, queries the hosted ledger for `refunds` in `failed`/`manual_review`
   and `payment_events` in `error`, and opens/updates a single `money-alert`
   GitHub issue. Reuses the analytics-retention secrets; skips cleanly when they
-  are absent.
+  are absent. That bucket is **Staging verified**: a `workflow_dispatch` filed
+  exactly one issue for the two historical errored events and a second dispatch
+  updated the same issue in place. As shipped it had no `actions/checkout`, so
+  every `gh` call failed at `fatal: not a git repository` after the ledger read;
+  the job now sets `GH_REPO`, updates the issue body instead of commenting
+  (idempotent), reopens a dismissed alert, and auto-closes when the ledger
+  clears.
 - **Free DR backstop:** `.github/workflows/backup.yml` takes a daily logical
   `pg_dump` (via the `postgres:17` image, so a newer client can always dump an
   older server) and uploads a 30-day artifact, verifying the dump is
