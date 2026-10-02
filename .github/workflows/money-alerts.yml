@@ -97,6 +97,11 @@ jobs:
         if: steps.scan.outputs.found == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No checkout step runs in this job, so there is no `.git` directory
+          # and `gh` cannot infer the repository from a remote. Without GH_REPO
+          # every `gh` call dies with "fatal: not a git repository" and the
+          # backstop silently never files an alert.
+          GH_REPO: ${{ github.repository }}
           N_REFUNDS: ${{ steps.scan.outputs.n_refunds }}
           N_EVENTS: ${{ steps.scan.outputs.n_events }}
           REFUNDS_JSON: ${{ steps.scan.outputs.refunds_json }}
@@ -138,14 +143,37 @@ jobs:
           EOF
           )
 
-          existing=$(gh issue list --label money-alert --state open --limit 1 --json number --jq '.[0].number // empty')
+          # Look across OPEN and CLOSED issues. If the owner dismisses a still
+          # unresolved alert, the next scan must update and REOPEN the same
+          # issue rather than mint a new one every 30 minutes.
+          existing=$(gh issue list --label money-alert --state all --limit 1 --json number --jq '.[0].number // empty')
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-            echo "Commented on existing money-alert issue #$existing"
+            # Update the existing body instead of commenting: an unresolved
+            # condition is re-detected every 30 minutes, and a fresh comment on
+            # each run would spam the issue (48/day) without adding signal.
+            gh issue edit "$existing" --body "$body"
+            if [ "$(gh issue view "$existing" --json state --jq .state)" = "CLOSED" ]; then
+              gh issue reopen "$existing"
+            fi
+            echo "Updated existing money-alert issue #$existing"
           else
             gh issue create \
               --title "Money-path alert: unresolved ledger rows" \
               --label money-alert \
               --body "$body"
+          fi
+
+      - name: Close the money-alert issue when the ledger is clear
+        if: steps.scan.outputs.found == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          existing=$(gh issue list --label money-alert --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" \
+              --comment "Resolved: the scheduled scan found no unresolved refunds or errored payment events."
+            echo "Closed money-alert issue #$existing"
           fi
 
