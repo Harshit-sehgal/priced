@@ -27,8 +27,9 @@ not been verified after the hostname change. Owner dashboard authentication is
 required to update those settings.
 ## Launch-readiness hardening — dependency, monitoring, and DR (2026-10-03)
 
-Independent deep-scan release: everything below is **CI verified** locally;
-the hosted secret/credential steps remain **Owner blocked**.
+Independent deep-scan release: the code changes are **CI/local verified** and the
+hardened build has since been **Staging verified** on the active Worker; the
+hosted secret/credential steps remain **Owner blocked**.
 
 - **Critical dependency fix:** `next` was pinned at `16.3.4`, inside the
   affected range for GHSA-vcvr-r3jv-pc5j (Remote Code Execution in `next/og`
@@ -64,11 +65,25 @@ the hosted secret/credential steps remain **Owner blocked**.
 - **Doc corrections:** `DEPLOY.md §8`, `.env.example`, `AGENTS.md`,
   `BACKLOG.md` A8, and `LAUNCH_CHECKLIST.md` now describe the real alerting
   sinks and the new workflows instead of the non-functional Sentry-only claim.
+- **Deployed and hosted-verified:** PR #78 was merged to `main` as `b5204ff`;
+  the `priced` Worker was then rebuilt with the public `NEXT_PUBLIC_*` values
+  exported at build time (Supabase project URL + anon key, `NEXT_PUBLIC_APP_URL`)
+  and deployed as version `b9377c49-52cd-4057-975e-3beba99c6a1e`. This replaced
+  the prior live version `83d0fcc0` (2026-09-29), which still ran the `next`
+  `16.3.4` build inside the `next/og` advisory blast radius. Hosted verification
+  after deploy: `/api/health?check=origin` returns `ok`; `npm run smoke:staging`
+  passes 11/11; `/api/health?check=db` reports `supabase`; and the
+  domain/receipt-unknown/reserved/`%25`-malformed OG routes all return PNGs
+  (the exact `next/og` code path the advisory covered), while the unsigned
+  webhook probe is rejected with HTTP 400.
 
 Verification after these changes: `npm run typecheck`, `npm run lint`,
 `npm test` (279 tests, 272 pass, 0 fail, 7 expected real-Postgres skips),
-`npm run build`, `npm run cf:build` (OpenNext build complete), and
-`npm audit` (0 vulnerabilities).
+`npm run test:pg` (36/36 against a real PostgreSQL row-lock harness), the
+Playwright suite (119 pass, 1 intentional skip), `npm run build`,
+`npm run cf:build` (OpenNext build complete), and `npm audit` (0
+vulnerabilities). The staging smoke and OG checks above were then re-run against
+the deployed Worker.
 
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 
