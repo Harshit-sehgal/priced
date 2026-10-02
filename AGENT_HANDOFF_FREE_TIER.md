@@ -6,7 +6,7 @@ If older wording in `DEPLOY.md`, `BACKLOG.md`, or `LAUNCH_CHECKLIST.md` conflict
 
 Active beta hosting override (2026-09-12): the designated hosted beta runs on
 Cloudflare Worker `priced` at
-`https://priced.harshit10sehgal.workers.dev`. The Vercel project and
+`https://priced.pricedapp.workers.dev`. The Vercel project and
 `https://internet-price-tag.vercel.app` are retained for rollback/reference;
 older Vercel wording below is historical unless superseded by
 `INTEGRATION_NOW.md`.

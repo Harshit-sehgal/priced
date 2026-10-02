@@ -1,0 +1,91 @@
+name: Logical backup
+
+# Daily logical backup of the hosted Priced database.
+#
+# Supabase's Free Plan provides NO managed backups, and PITR is deliberately
+# disabled during the free beta (DEPLOY.md §7), so the only durable copy of the
+# immutable sales ledger is one this repo takes itself. This workflow dumps the
+# database with pg_dump and uploads it as a build artifact.
+#
+# It is a LOGICAL dump, not a substitute for the managed PITR that real-money
+# production still requires — it is the free-tier safety net until then.
+#
+# SETUP (owner): add repository secret
+#   SUPABASE_DB_URL   the Postgres connection string, e.g.
+#     postgresql://postgres.<ref>:<db-password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
+#   (Project Settings → Database → Connection string → URI. Use the SESSION
+#    pooler or the direct connection so pg_dump can hold one session.)
+# The job SKIPS cleanly when the secret is absent.
+#
+# The dump runs inside the `postgres:17` image rather than the runner's own
+# client: a NEWER client can dump an older server, but not vice versa, so this
+# covers both PG15 and PG17 Supabase projects deterministically.
+#
+# RESTORE: download the artifact and run
+#   pg_restore --clean --no-owner --no-privileges -d "$TARGET_DB" priced-<stamp>.dump
+# then verify domains vs sales and re-run `npm run test:concurrency`.
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 03:30 UTC daily, ahead of the 04:10 retention prune
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    name: Dump database
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Dump the hosted database with the postgres:17 client
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "::warning::SUPABASE_DB_URL not configured — logical backup is NOT running."
+            echo "Add SUPABASE_DB_URL (Project Settings -> Database -> Connection string) to enable it."
+            exit 0
+          fi
+
+          mkdir -p backup
+          stamp=$(date -u +%Y%m%dT%H%M%SZ)
+          echo "stamp=${stamp}" >> "$GITHUB_ENV"
+
+          # Custom format: compressed, restorable with pg_restore, and it lets a
+          # future restore be selective (e.g. just public.sales).
+          docker run --rm -e SUPABASE_DB_URL -v "$PWD/backup:/backup" postgres:17 \
+            bash -c 'pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges --format=custom --file="/backup/priced-'"${stamp}"'.dump"'
+
+          # A plain schema dump is cheap and diffable, so schema drift is
+          # reviewable without standing up a database.
+          docker run --rm -e SUPABASE_DB_URL -v "$PWD/backup:/backup" postgres:17 \
+            bash -c 'pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges --schema-only --file="/backup/schema-'"${stamp}"'.sql"'
+
+          dump="backup/priced-${stamp}.dump"
+
+          # Prove the dump is real: it must be non-trivial and contain the
+          # immutable sales ledger. An empty or truncated dump is worse than
+          # none, because it looks like coverage.
+          size=$(stat -c %s "$dump")
+          if [ "$size" -lt 1024 ]; then
+            echo "::error::dump is suspiciously small (${size} bytes)"
+            exit 1
+          fi
+          if ! docker run --rm -v "$PWD/backup:/backup" postgres:17 \
+              pg_restore --list "/backup/priced-${stamp}.dump" | grep -q 'TABLE public sales'; then
+            echo "::error::dump does not contain public.sales"
+            exit 1
+          fi
+          echo "dump ok: ${size} bytes; public.sales present"
+
+      - name: Upload the backup artifact
+        if: env.stamp != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: priced-logical-backup-${{ env.stamp }}
+          path: backup/
+          retention-days: 30
+          if-no-files-found: error

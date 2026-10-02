@@ -56,7 +56,7 @@ the real hosted contract remains visible as its own status check.
 
 - `main` — production lane. CI must be green before merge.
 - **Active beta:** Cloudflare Worker `priced` at
-  `https://priced.harshit10sehgal.workers.dev`, deployed from this repo with
+  `https://priced.pricedapp.workers.dev`, deployed from this repo with
   OpenNext (`DEPLOY.md §3`). Deploys are manual (`cf:build` then `cf:deploy`)
   and are not triggered by merges; `main` green is the prerequisite.
 - **Vercel:** the renamed `priced` project and `https://internet-price-tag.vercel.app`
@@ -68,7 +68,7 @@ the real hosted contract remains visible as its own status check.
 - `smoke:staging` (`scripts/staging-smoke.mjs`) is the hosted beta gate:
 
   ```bash
-  STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging
+  STAGING_URL=https://priced.pricedapp.workers.dev npm run smoke:staging
   ```
 
 ## Hotfix exception

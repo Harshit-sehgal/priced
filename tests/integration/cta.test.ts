@@ -99,7 +99,7 @@ test("cta: the host actually serving the request counts as self, even if config 
   const previous = process.env.NEXT_PUBLIC_APP_URL;
   process.env.NEXT_PUBLIC_APP_URL = "https://old-host.example"; // stale config
   try {
-    const live = "priced.harshit10sehgal.workers.dev";
+    const live = "priced.pricedapp.workers.dev";
     const stale = validateCta("Verify ownership", `https://${live}/login`);
     assert.equal(stale.ok, true, "without the served host the live domain slips through");
 

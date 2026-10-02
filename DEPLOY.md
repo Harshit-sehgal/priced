@@ -7,7 +7,9 @@ because they need accounts, credentials and a legal review.
 ## 0. Prerequisites
 
 - This repo with `main` green on CI.
-- A domain for the app itself (e.g. `priced.game`).
+- A custom domain is optional for the current free sandbox and closed beta;
+  use `https://priced.pricedapp.workers.dev`. Choose a custom domain later if
+  the product needs a branded hostname for a wider launch.
 
 ## 1. Supabase (data + auth + realtime)
 
@@ -59,7 +61,7 @@ because they need accounts, credentials and a legal review.
 
 The active beta origin is:
 
-`https://priced.harshit10sehgal.workers.dev`
+`https://priced.pricedapp.workers.dev`
 
 The Worker is named `priced` and is deployed from this repository with
 OpenNext. It has the existing Supabase project, Dodo Test Mode, and the free
@@ -73,7 +75,7 @@ Upstash Redis credentials configured as Worker secrets. Deploy with:
 #    Realtime — and nothing detects it until a user clicks.
 export NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
 export NEXT_PUBLIC_SUPABASE_ANON_KEY=<public anon key>
-export NEXT_PUBLIC_APP_URL=https://priced.harshit10sehgal.workers.dev
+export NEXT_PUBLIC_APP_URL=https://priced.pricedapp.workers.dev
 npm run cf:build   # precf:build wipes .next/.open-next first — see below
 
 # 2. `cf:deploy` uploads the LAST BUILD OUTPUT — it does not rebuild. Always
@@ -97,16 +99,16 @@ must repeat the same sequence with its production origin.
 After a deploy, verify the public dependencies and route contract:
 
 ```bash
-curl https://priced.harshit10sehgal.workers.dev/api/health
-curl https://priced.harshit10sehgal.workers.dev/api/health?check=db
-curl https://priced.harshit10sehgal.workers.dev/api/health?check=redis
-curl https://priced.harshit10sehgal.workers.dev/api/health?check=origin
+curl https://priced.pricedapp.workers.dev/api/health
+curl https://priced.pricedapp.workers.dev/api/health?check=db
+curl https://priced.pricedapp.workers.dev/api/health?check=redis
+curl https://priced.pricedapp.workers.dev/api/health?check=origin
 # Public pages must render (OpenNext 500s a prerendered page the proxy makes
 # dynamic at request time; every HTML route is force-dynamic for this reason):
 for p in /login /welcome /checkout/mock /about /terms /privacy /refunds; do
-  curl -fsS -o /dev/null "https://priced.harshit10sehgal.workers.dev$p" || echo "FAILED $p"
+  curl -fsS -o /dev/null "https://priced.pricedapp.workers.dev$p" || echo "FAILED $p"
 done
-STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging
+STAGING_URL=https://priced.pricedapp.workers.dev npm run smoke:staging
 ```
 
 Keep ordinary untrusted previews secret-free/demo-only. Keep Dodo in Test Mode
@@ -191,10 +193,11 @@ Supabase CLI login and bounded PostgreSQL pool ran 10 first-claim requests and
 price, and one sale per version. The disposable test rows were removed. This
 proves database-level hosted locking; the REST/service-role harness is also
 verified. The hosted 25-payment batch and terminal-quote payment/refund race
-are now **Staging verified (partial)**; only the strict same-version 25-way
-timing gate remains **External provider blocked** because the deployed
-eight-per-window limiter and five-minute TTL cannot be satisfied by one
-signed-in challenger account.
+are now **Staging verified (partial)**. The clean same-version 25-way timing
+gate is also **Staging verified**: 25 provider successes produced exactly one
+consumed quote/sale, 24 stale quotes, zero expired quotes, and 24 successful
+full refunds while the deployed eight-per-window limiter and five-minute TTL
+stayed unchanged.
 
 ## 5. Content + safety pass
 
@@ -221,14 +224,29 @@ signed-in challenger account.
 
 ## 8. Monitoring (item 9)
 
-All server logs are single-line JSON; optionally mirrored to Sentry when
-`SENTRY_DSN` is set (server-side, sampling 0.1; no client SDK yet).
-Add `SENTRY_DSN` to the active deployment env (Cloudflare Worker secret) when
-you wire the alert destination. Until then, the Cloudflare live tail
-(`npx wrangler tail priced`), the `.github/workflows/staging-health.yml`
-15-minute probe, and `https://<your-domain>/api/health` (and `?check=db` for
-readiness) are the monitoring path. Vercel Hobby log-drain controls were
-unavailable and apply only to the rollback deployment.
+All server logs are single-line JSON. Two optional, independent sinks forward
+**error-level** events only:
+
+- **`ALERT_WEBHOOK_URL` (recommended, free, dependency-free).** When set, every
+  `level="error"` line is also POSTed as JSON to that URL — Slack, Discord, or
+  any collector. It works on Cloudflare Workers and Node (platform `fetch`),
+  strips secret/PII-shaped keys, and is fire-and-forget with a 3s timeout, so a
+  dead collector can never block a request. This is the alert destination the
+  launch runbook expects; without it, refund/finalization failures appear only
+  in the log stream.
+- **`SENTRY_DSN` (optional, requires the package).** Sentry receives the same
+  sanitized `event` name/tags **only when `@sentry/nextjs` is actually
+  installed** (`npm i @sentry/nextjs`). It is deliberately not a hard
+  dependency; setting the DSN alone does nothing, because the optional import
+  fails silently rather than breaking the money path.
+
+Add `ALERT_WEBHOOK_URL` to the active deployment env (Cloudflare Worker secret)
+to turn alerting on. The Cloudflare live tail (`npx wrangler tail priced`),
+the `.github/workflows/staging-health.yml` 15-minute probe,
+`.github/workflows/money-alerts.yml` (scheduled money-ledger check), and
+`https://<your-domain>/api/health` (and `?check=db` for readiness) are the
+monitoring path. Vercel Hobby log-drain controls were unavailable and apply
+only to the rollback deployment.
 
 Alert on any of these at level `error`:
 
@@ -281,9 +299,9 @@ Cloudflare live tail or your Sentry event stream):
 
 Triage queries: filter by `payment_id`, `quote_id`, `event_id` — every event
 carries them. `payment_events.payload_hash` correlates retried deliveries.
-Never log raw webhook bodies or secrets; only hashes and ids. Sentry (when
-`SENTRY_DSN` is set) receives the same `event` name and sanitized tags —
-no payload bodies, no secrets.
+Never log raw webhook bodies or secrets; only hashes and ids. Both alert sinks
+(`ALERT_WEBHOOK_URL` and, when installed, Sentry) receive the same `event` name
+and sanitized tags — no payload bodies, no secrets.
 
 ## 9. Analytics retention and privacy
 
@@ -299,11 +317,12 @@ deletes rows older than 180 days in bounded batches. The daily scheduler is
 runs once the workflow is on the default branch AND the two repo secrets below
 exist.
 
-**Enforcement status:** scheduled workflows only run from the repository's
-default branch, and the job skips cleanly when repo secrets
-`SUPABASE_PROJECT_URL` + `SUPABASE_SERVICE_ROLE_KEY` are absent. Until both are
-true, the privacy page's "deleted after about 180 days" claim is NOT enforced.
-Owner step: add the two repository secrets and merge the workflow to `main`.
+**Current enforcement status:** **Staging verified**. The workflow is merged
+to `main`, repository secrets `SUPABASE_PROJECT_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` are configured, and manual run `34771269757`
+completed against the hosted Supabase project (zero expired rows to delete).
+If either prerequisite is removed, the scheduled job skips and retention must
+be treated as unenforced until the configuration is restored.
 Manual fallback (any time):
 
 ```sql

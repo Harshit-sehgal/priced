@@ -12,11 +12,18 @@ One authoritative progress file (§41). Statuses are strict:
 
 Nothing is marked beyond the level actually evidenced.
 
-Active beta hosting (2026-09-12): Cloudflare Worker `priced` at
-`https://priced.harshit10sehgal.workers.dev`. The Vercel project and
+Active beta hosting (2026-09-30): Cloudflare Worker `priced` at
+`https://priced.pricedapp.workers.dev`. The Vercel project and
 `https://internet-price-tag.vercel.app` are rollback/reference only. Older
 Vercel references below describe the prior deployment unless superseded by
 `INTEGRATION_NOW.md`.
+
+Latest hostname migration (2026-09-30): the Cloudflare account namespace is
+`pricedapp`, and both account Workers moved to that namespace. Dodo Test Mode
+webhooks now target the new Priced URL; a signed duplicate event returned HTTP
+200, and the 10-check staging smoke passed. Supabase Auth still needs the new
+Site URL and callback allowlist before Google sign-in can be verified on this
+host (**Owner blocked**).
 
 Latest sandbox reconciliation (2026-09-18): Dodo Test Mode successfully
 completed the previously wallet-blocked stale-payment refunds after
@@ -24,17 +31,37 @@ disposable sandbox top-ups. Dodo's signed replay of missing historical
 `refund.succeeded` events then reconciled the remaining legacy rows; the
 hosted Supabase audit now has zero Dodo refund rows in `manual_review` or
 `failed`. No customer-facing sale is associated with those refunds.
-The 25-payment hosted batch is now **Staging verified (partial)**: one
+An earlier 25-payment hosted batch is **Staging verified (partial)**: one
 takeover finalized and 24 refund rows succeeded; 16 quotes expired during
 the five-minute TTL and 8 were stale. A clean same-version 25-way race is
-still **External provider blocked** by the deployed eight-per-window quote
-limiter and five-minute TTL, not by missing wallet capacity.
+now documented below as **Staging verified**; this earlier batch was limited by
+the deployed eight-per-window quote limiter and five-minute TTL, not by missing
+wallet capacity.
 A separate two-quote hosted terminal-quote check also paid the winner and then
 paid the competing quote through its already-created checkout; the latter
 returned `stale`, and its `$5.00` refund ledger row became `succeeded` with no
 second sale.
 
-Latest browser beta pass (2026-09-18): public routes, holder profile,
+Earlier prepared-challenger payment completion (2026-09-19): all 25 prepared
+Dodo Test Mode checkout sessions were submitted for a disposable same-version
+domain. Exactly one quote was consumed and recorded a `$5.00` sale; the other
+24 quotes expired because sequential browser submission crossed the five-minute
+TTL. Dodo's Test Mode dashboard shows successful full refunds for all 24
+non-winning payments (21 tax-inclusive `$5.90` refunds and 3 `$5.00` refunds).
+This is additional **Staging verified (partial)** payment/refund evidence; it
+does not clear the clean same-version timing gate because the 24 losing quotes
+were no longer live when paid.
+
+Latest clean same-version payment completion (2026-09-19): all 25 Dodo Test
+Mode checkout sessions for a disposable tag were submitted through four
+authenticated challenger accounts while their quotes remained live. Exactly
+one quote was consumed and recorded a `$5.00` sale, 24 quotes became `stale`,
+and zero quotes expired. Dodo shows 24 successful full refunds for the
+non-winning payments, each with the tax-inclusive `$5.90` provider total. The
+strict same-version 25-way timing gate is now **Staging verified**; no limiter,
+TTL, amount, webhook, or concurrency control was weakened.
+
+Previous-origin browser beta pass (2026-09-18; predates the current hostname): public routes, holder profile,
 analytics, receipt/share surface, search, quote confirmation, Dodo checkout,
 checkout cancellation, and a real Dodo Test Mode declined-card path were
 exercised on the stable Cloudflare origin. The declined payment produced a
@@ -42,6 +69,14 @@ signed `payment.failed` delivery accepted with HTTP 200, left the tag
 unclaimed, and did not change the `$66.67` Test Mode balance. The local browser
 suite passed 119 tests with 1 intentional skip on desktop and mobile; hosted
 browser console errors/warnings were zero.
+
+Latest cleanup and release audit (2026-09-19): the duplicate untracked
+`.agents/` copy and regenerated build/test artifacts were removed from the
+worktree. Supabase had no unclaimed domains; sold sandbox domains and all
+immutable sales/payment/refund evidence were preserved. Exactly 25 expired
+quote rows with no checkout/payment id were removed. Typecheck, lint, full
+tests, production build, Cloudflare build, hosted health, and the 10-check
+staging smoke are green.
 
 ## Product
 
@@ -71,20 +106,20 @@ browser console errors/warnings were zero.
 |---|---|---|
 | Dodo provider: PWYW checkout, Standard-Webhooks verify, refunds | Implemented; CI-verified logic | `tests/integration/dodo.test.ts` (network stubbed) |
 | Dodo permission check for symbolic-status product | Implemented | Owner confirmed Dodo product verification/approval; do not reopen unless Dodo requests it |
-| Dodo sandbox matrix (success/fail/cancel/duplicate/stale/simultaneous/refund-failure/missing-metadata/wrong-amount/outage) | Staging verified (partial); External provider blocked for a clean 25-way same-version timing race | Real Test Mode success, declined payment, signed webhook acceptance, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic finalization, Dodo tax-inclusive amount handling, hosted stale/wrong-amount refunds, a hosted terminal-quote payment/refund race, and the 2026-09-18 stale-signed HMAC/duplicate/forged-signature probe are verified on the stable beta origin. The deployed refund path now fails closed on Dodo `pending`/`review` responses and reconciles signed `refund.succeeded`/`refund.failed` events; the Test Mode endpoint subscribes to all 12 required events. The 2026-09-18 hosted 25-payment batch produced 25 provider successes, exactly one consumed quote/sale, eight stale quotes, sixteen TTL-expired quotes, and 24 succeeded refund-ledger rows totaling `$120.00` with no second sale. The provider-outage path is also Staging verified: a temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, then the override was removed and normal health/smoke checks passed. Procedure: `DEPLOY.md` §4. |
+| Dodo sandbox matrix (success/fail/cancel/duplicate/stale/simultaneous/refund-failure/missing-metadata/wrong-amount/outage) | Staging verified (partial); clean 25-way same-version timing race now Staging verified | Real Test Mode success, declined payment, signed webhook acceptance, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic finalization, Dodo tax-inclusive amount handling, hosted stale/wrong-amount refunds, a hosted terminal-quote payment/refund race, a clean same-version 25-payment race with exactly one sale, 24 stale quotes, zero expiries, and 24 successful full refunds, and the 2026-09-18 stale-signed HMAC/duplicate/forged-signature probe are verified on the stable beta origin. The deployed refund path now fails closed on Dodo `pending`/`review` responses and reconciles signed `refund.succeeded`/`refund.failed` events; the Test Mode endpoint subscribes to all 12 required events. The provider-outage path is also Staging verified: a temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, then the override was removed and normal health/smoke checks passed. Procedure: `DEPLOY.md` §4. |
 | Live Dodo configuration | Owner blocked | DEPLOY.md §6 |
 
 ## Infrastructure
 
 | Item | Status | Evidence |
 |---|---|---|
-| Supabase project + migrations + auth + Realtime + backups | Staging verified; Owner/provider blocked only for managed backups | Existing Priced project and hosted-hardening migrations are the source of truth; Site URL and `/auth/callback` are configured, Google login reaches the welcome flow, `@harshit` is saved, and `/api/health?check=db` is healthy. A live two-session Realtime market update is verified. On 2026-09-11, hosted schema and data dumps were restored into isolated PostgreSQL 17 with 3 domains, 3 sales, 2 profiles, 97 analytics events, and 5 payment events. The real Supabase REST/service-role harness also passed all 8 tests. On 2026-09-13 the role privilege model was made explicit (`20260913000004`: discovery reads, money/moderation DENY, service_role DML, profiles column-only, `pg_temp` pinned on all SECURITY DEFINER functions) and applied to hosted with a live privilege query. Supabase Free Plan does not include managed project backups; PITR remains off. See `INTEGRATION_NOW.md`. |
+| Supabase project + migrations + auth + Realtime + backups | Staging verified on the previous hostname; Owner blocked for new-host Auth redirect and provider-blocked for managed backups | Existing Priced project and hosted-hardening migrations are the source of truth; Google login, welcome, `@harshit`, database, Realtime, and the isolated restore were verified on the previous hostname. The new origin `https://priced.pricedapp.workers.dev` is not yet in Supabase's Site URL/redirect allowlist, so sign-in must be re-verified after owner dashboard access. Supabase Free Plan does not include managed project backups; PITR remains off. See `INTEGRATION_NOW.md`. |
 | Real-Postgres RPC concurrency (10 + 25 racers) | Staging verified | Using an authenticated Supabase CLI database login and bounded PostgreSQL pool, hosted 10-way first-claim concurrency produced exactly 1 `OK`/9 `STALE_QUOTE`, and hosted 25-way held-domain concurrency produced exactly 1 `OK`/24 `STALE_QUOTE`; final states were version 1/price 500/sales 1 and version 2/price 1000/sales 2. The real REST/service-role `tests/integration/postgres.finalize.test.ts` harness also passed all 8 tests with the protected key held transiently in memory. Test rows were removed. |
 | Upstash Redis + distributed rate limits | Staging verified | Free-tier database `priced-beta-redis` is created in the new Upstash account (`us-west-1`); REST URL/token are configured only in the active Cloudflare Worker. A clean concurrent hosted run verified handle user/IP `5/15`, profile user `10`, quote user/IP/domain/user+domain `30/60/30/8`, and checkout user/IP `20/30`: the next request in each burst returned `429 rate_limited` with no 5xx. Disposable Auth users, profiles, and quotes were removed; existing `promptpay-staging-redis` was left untouched. |
-| Cloudflare Worker beta deployment | Staging verified | Worker `priced` serves the stable beta origin; health, Supabase, Redis, Google Auth, Dodo Test Mode checkout/webhook, profile, analytics, share, and routing checks pass. On 2026-09-13 a stale artifact (prerendered pages 500ing with OpenNext's static-to-dynamic error, client bundle missing the inlined public Supabase env) was repaired and redeployed: all public HTML routes return 200, custom 404 renders, health/db/redis/origin are green, and the 10-check smoke passes (including every public HTML route). |
+| Cloudflare Worker beta deployment | Staging verified; Owner blocked for new-host Auth | Worker `priced` serves `https://priced.pricedapp.workers.dev`. On 2026-09-30, the new-origin liveness, Supabase, Redis, origin, all public HTML routes, and 10-check staging smoke passed; a signed duplicate Dodo Test Mode event reached the new webhook and returned HTTP 200. The full Google Auth and checkout/browser journey was verified on the previous hostname and must be repeated after the Supabase Site URL/redirect update. On 2026-09-13 a stale artifact (prerendered pages 500ing with OpenNext's static-to-dynamic error, client bundle missing the inlined public Supabase env) was repaired and redeployed: all public HTML routes return 200, custom 404 renders, health/db/redis/origin are green, and the 10-check smoke passes (including every public HTML route). |
 | Vercel project rename `internet-price-tag` → `priced` | Implemented | Existing project renamed through the authenticated Vercel CLI; project id preserved and production alias remains `https://internet-price-tag.vercel.app` |
 | Env separation (Local/Preview/Production) | Implemented | Matrix in `.env.example`; active Cloudflare Worker holds beta secrets, while ordinary previews remain secret-free/demo-only. |
-| Monitoring/alerts (error-event list, uptime, 5xx rate) | Implemented (docs + structured logs + free uptime workflow); Owner blocked for persistent error alert routing | DEPLOY.md §8: exact event queries + uptime endpoints. `.github/workflows/staging-health.yml` checks Cloudflare liveness, Supabase readiness, Redis readiness, origin config, and every public HTML route every 15 minutes; `.github/workflows/ci.yml` now has a separate `Hosted beta smoke` status check; Cloudflare live tail is available for diagnostics. A persistent error-alert destination still needs owner selection. |
+| Monitoring/alerts (error-event list, uptime, 5xx rate) | Implemented (app-side `ALERT_WEBHOOK_URL` sink + scheduled ledger check + free uptime workflow); Owner step: set the alert-URL secret | DEPLOY.md §8: exact event queries + uptime endpoints. `src/lib/logger.ts` forwards every error-level event to `ALERT_WEBHOOK_URL` (dependency-free, works on Workers, secret/PII keys stripped). `.github/workflows/money-alerts.yml` scans the hosted ledger every 30 min and opens/updates a `money-alert` issue. `.github/workflows/staging-health.yml` checks liveness, Supabase, Redis, origin, every public HTML route, and webhook reachability every 15 minutes; `.github/workflows/ci.yml` has a separate `Hosted beta smoke` status check. Cloudflare live tail remains available for diagnostics. |
 | Health endpoint (liveness + `?check=db` readiness) | CI verified | `tests/integration/health-analytics.test.ts` + CI smoke step |
 
 ## Holder value layer
@@ -129,10 +164,10 @@ browser console errors/warnings were zero.
 
 ## Owner gates remaining (in order — exact actions in DEPLOY.md)
 
-1. **Supabase/Auth** (§1): the hosted logical schema/data dump and isolated PostgreSQL 17 restore are complete; Google OAuth, callback, welcome, logout/re-login, `@harshit` handle creation, the live two-session Realtime update, database-level hosted RPC concurrency, and the real REST/service-role RPC harness are complete. Managed backups/PITR remain unavailable on the Free Plan.
-2. **Sandbox gate** (§4/B1): the hosted 25-payment batch is complete with exactly one takeover and 24 succeeded refund-ledger rows; a clean same-version 25-way timing run remains blocked because the eight-per-window quote limiter and five-minute TTL cannot be combined with one signed-in challenger account in the current browser setup. The provider-outage case is Staging verified, and the normal deployment has a passing `npm run smoke:staging` result. The real service-role harness and database-level hosted RPC concurrency are already Staging verified.
-3. **Monitoring** (§8/A8): add an authorized external uptime check and decide how to handle alerting/log drains; Vercel Hobby currently has `Add Drain`, `Add Rule`, and `Add Webhook` disabled, so monitoring wiring is **External provider blocked** without a plan change or external service.
-4. **Backup/recovery**: the documented logical dump and isolated restore procedure is Staging verified. Supabase Free Plan has no managed project backups; do not enable PITR during the free beta phase. Revisit managed backups and environment isolation before real-money production.
+1. **Supabase/Auth** (§1): log into the existing Supabase dashboard and set Site URL to `https://priced.pricedapp.workers.dev`; add `https://priced.pricedapp.workers.dev/auth/callback` to the redirect allowlist while retaining the Vercel rollback callback if needed. Then verify Google OAuth, callback, welcome, logout/re-login, and handle creation on the new origin. Previous-origin auth, Realtime, database concurrency, and restore checks remain verified. Managed backups/PITR remain unavailable on the Free Plan.
+2. **Sandbox gate** (§4/B1): the clean hosted same-version 25-payment race is now **Staging verified** with exactly one takeover, 24 stale quotes, zero expired quotes, and 24 successful full refund-ledger rows. The deployed eight-per-window limiter and five-minute TTL were preserved. The provider-outage case is also Staging verified, and the normal deployment has a passing `npm run smoke:staging` result. The remaining payment-matrix items are the owner/provider-gated cases documented in `BACKLOG.md` and `DEPLOY.md`.
+3. **Monitoring** (§8/A8): set the `ALERT_WEBHOOK_URL` Worker secret (Slack/Discord/generic collector) to switch on real-time error alerting, and add the two Supabase secrets (`SUPABASE_PROJECT_URL`, `SUPABASE_SERVICE_ROLE_KEY`) that `.github/workflows/money-alerts.yml` uses for the scheduled ledger backstop. Add an external uptime check if desired; Vercel Hobby's `Add Drain`/`Add Rule`/`Add Webhook` controls were disabled and apply only to the rollback deployment.
+4. **Backup/recovery**: the documented logical dump and isolated restore procedure is Staging verified, and `.github/workflows/backup.yml` now takes a **daily** logical dump (`pg_dump` via the `postgres:17` image) and uploads it as a 30-day artifact — set the `SUPABASE_DB_URL` secret to enable it. Supabase Free Plan has no managed project backups; do not enable PITR during the free beta phase. Managed backups/PITR remain required before real-money production.
 5. **Legal review** of policy pages (D1).
 6. **Live keys** (D2): swap to live Dodo config in Production only after every sandbox gate is green and plan compliance is reviewed.
 7. **Closed beta** (D3): 10–20 people; watch `takeover_succeeded`, `refund_failed`, and share visits; measure repeat-challenge rate (§35 metrics list).

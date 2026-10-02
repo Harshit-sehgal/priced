@@ -2,13 +2,81 @@
 
 This file is the current authority for the next execution phase and overrides older wording that treats Dodo product eligibility as unresolved.
 
-## Active beta hosting update (2026-09-12)
+Dated sections below preserve the status observed at that time; later dated
+verification supersedes earlier status statements. In particular, the clean
+same-version 25-payment Dodo Test Mode race was completed on 2026-09-19 and is
+now **Staging verified**; earlier 2026-09-17/18 notes that call it blocked are
+historical evidence only.
 
-The designated free-tier beta origin is now Cloudflare Workers:
-`https://priced.harshit10sehgal.workers.dev`. The `priced` Worker is deployed
+## Active beta hostname migration (2026-09-30)
+
+The owner selected the available Cloudflare account namespace `pricedapp`;
+the active beta URL is now `https://priced.pricedapp.workers.dev`. Changing
+the account namespace moved both existing Workers, and the old workers.dev
+hostname no longer routes. The existing Dodo Test Mode endpoint now points to
+`https://priced.pricedapp.workers.dev/api/webhooks/payments`; its signing
+secret was not rotated and a signed duplicate `payment.succeeded` replay
+reached the new endpoint with HTTP 200. Dodo remains in Test Mode.
+
+The Worker was rebuilt and deployed with `NEXT_PUBLIC_APP_URL` set to the new
+origin. The 10-check `npm run smoke:staging` suite passed on the new host;
+liveness, Supabase, Redis, origin, and all public HTML route checks returned
+HTTP 200. Supabase Auth is the remaining hostname-specific blocker: its Site
+URL and `/auth/callback` allowlist still need the new origin, and sign-in has
+not been verified after the hostname change. Owner dashboard authentication is
+required to update those settings.
+## Launch-readiness hardening — dependency, monitoring, and DR (2026-10-03)
+
+Independent deep-scan release: everything below is **CI verified** locally;
+the hosted secret/credential steps remain **Owner blocked**.
+
+- **Critical dependency fix:** `next` was pinned at `16.3.4`, inside the
+  affected range for GHSA-vcvr-r3jv-pc5j (Remote Code Execution in `next/og`
+  ImageResponse). This app ships two OG image routes
+  (`/domain/[domain]/opengraph-image`, `/success/[saleId]/opengraph-image`), so
+  the advisory was in the live blast radius. Bumped `next` and
+  `eslint-config-next` to `16.3.8` and ran `npm audit fix` for the remaining
+  dev-only advisories; `npm audit --omit=dev` and the full `npm audit` now both
+  report **0 vulnerabilities**.
+- **Alerting made real:** `src/lib/logger.ts` previously only *attempted* a
+  Sentry forward via a dynamic import of `@sentry/nextjs`, which is **not a
+  dependency** — so a production `refund_failed` produced a log line and
+  nothing else, while `DEPLOY.md §8` claimed Sentry mirroring. The logger now
+  forwards every error-level event to `ALERT_WEBHOOK_URL` (dependency-free JSON
+  POST; works on Workers; secret/PII-shaped keys stripped; fire-and-forget with
+  a 3s timeout). Sentry stays as an optional sink that activates only when the
+  package is installed. Five new tests pin error-forwarding, info/warn silence,
+  secret-key stripping, and never-throws.
+- **Free alerting backstop:** `.github/workflows/money-alerts.yml` runs every
+  30 minutes, queries the hosted ledger for `refunds` in `failed`/`manual_review`
+  and `payment_events` in `error`, and opens/updates a single `money-alert`
+  GitHub issue. Reuses the analytics-retention secrets; skips cleanly when they
+  are absent.
+- **Free DR backstop:** `.github/workflows/backup.yml` takes a daily logical
+  `pg_dump` (via the `postgres:17` image, so a newer client can always dump an
+  older server) and uploads a 30-day artifact, verifying the dump is
+  non-trivial and contains `public.sales`. This is the free-tier safety net;
+  managed backups/PITR are still required before real-money production.
+- **Money-path reachability:** the staging smoke suite and the 15-minute health
+  workflow now probe `POST /api/webhooks/payments`. An unsigned body is
+  rejected with 400 *before* any DB write, so the probe moves no money and
+  creates no `payment_events` row, while still failing on a 404/5xx.
+- **Doc corrections:** `DEPLOY.md §8`, `.env.example`, `AGENTS.md`,
+  `BACKLOG.md` A8, and `LAUNCH_CHECKLIST.md` now describe the real alerting
+  sinks and the new workflows instead of the non-functional Sentry-only claim.
+
+Verification after these changes: `npm run typecheck`, `npm run lint`,
+`npm test` (279 tests, 272 pass, 0 fail, 7 expected real-Postgres skips),
+`npm run build`, `npm run cf:build` (OpenNext build complete), and
+`npm audit` (0 vulnerabilities).
+
+## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
+
+The designated free-tier beta origin at that time was Cloudflare Workers:
+`https://priced.harshit10sehgal.workers.dev`. The `priced` Worker was deployed
 with the existing Supabase project, Dodo Test Mode, and free Upstash Redis
 credentials. Supabase Site URL/redirect configuration and the Dodo Test Mode
-webhook endpoint point to this origin. The Vercel project and its
+webhook endpoint pointed to this origin. The Vercel project and its
 `https://internet-price-tag.vercel.app` alias are retained as rollback/reference
 only; older Vercel-specific entries below are historical evidence from the
 previous beta deployment.
@@ -368,11 +436,11 @@ Do not create paid infrastructure without explicit owner approval.
 1. Gain access to the existing Vercel project currently associated with `internet-price-tag`. **Implemented.**
 2. Rename it to `priced` where possible rather than creating a duplicate. **Implemented.**
 3. Ensure Git integration uses `Harshit-sehgal/priced` and `main`. **Implemented.**
-4. Establish one stable beta/staging origin. **Implemented** — the active origin is the Cloudflare Worker `https://priced.harshit10sehgal.workers.dev`; the Vercel alias is retained for rollback only.
+4. Establish one stable beta/staging origin. **Implemented** — the active origin is the Cloudflare Worker `https://priced.pricedapp.workers.dev`; the Vercel alias is retained for rollback only.
 5. Wire the Priced Supabase public URL/key and server-only service-role key into that designated environment (currently the Worker secrets). **Implemented.**
-6. Configure Supabase Site URL and redirects using the stable origin. **Implemented.**
+6. Configure Supabase Site URL and redirects using the stable origin. **Implemented for the previous hostname; Owner blocked for the new origin as of 2026-09-30.**
 7. Configure Google OAuth as the primary beta login. **Implemented.**
-8. Verify login, OAuth callback, welcome, handle creation, logout, and repeat login. **Staging verified** with Google OAuth and the saved public handle `@harshit`.
+8. Verify login, OAuth callback, welcome, handle creation, logout, and repeat login. **Staging verified on the previous hostname** with Google OAuth and the saved public handle `@harshit`; new-origin verification awaits the Supabase redirect update.
 9. Keep ordinary untrusted PR previews in demo mode without service-role or Dodo credentials. **Implemented.**
 
 ### Track B: Dodo Payments
@@ -382,7 +450,7 @@ Do not create paid infrastructure without explicit owner approval.
 3. Configure `DODO_PAYMENTS_API_KEY`, `DODO_PAYMENTS_MODE=test`, `DODO_PAYMENTS_PRODUCT_ID`, and `DODO_PAYMENTS_WEBHOOK_KEY` in the designated beta environment only. **Implemented.**
 4. Configure the signed webhook endpoint at `https://<stable-beta-origin>/api/webhooks/payments`. **Implemented.**
 5. Verify event names and payload fields against current Dodo docs before changing code. **Implemented**: the endpoint is currently subscribed to all 12 required payment, refund, and dispute events; the hosted endpoint configuration was rechecked on 2026-09-12.
-6. Run real signed sandbox transactions and the full payment-state matrix. **Staging verified (partial)** for successful and declined payments, signed webhook delivery, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic takeover finalization, tax-inclusive provider payload handling, stale/wrong-amount refunds, and the provider-outage path. For the latter, a temporary invalid `DODO_PAYMENTS_BASE_URL` deployment returned hosted `502 checkout_failed` before creating a provider payment; the override was removed and normal health/smoke checks passed. The simultaneous hosted payment race remains outstanding.
+6. Run real signed sandbox transactions and the full payment-state matrix. **Staging verified (partial)** for successful and declined payments, signed webhook delivery, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic takeover finalization, tax-inclusive provider payload handling, stale/wrong-amount refunds, a clean same-version 25-way payment/refund race with zero expired quotes, and the provider-outage path. For the latter, a temporary invalid `DODO_PAYMENTS_BASE_URL` deployment returned hosted `502 checkout_failed` before creating a provider payment; the override was removed and normal health/smoke checks passed. Remaining matrix cases are the owner/provider-gated cases listed below.
 7. Validate stale quote refunds, wrong-amount refunds, idempotency, duplicate webhooks, retries, simultaneous challengers, provider failure, and refund failure.
 8. Do not enable live mode until the complete integration gate is green.
 
@@ -400,7 +468,7 @@ Do not create paid infrastructure without explicit owner approval.
 Start after Tracks A-C have usable hosted resources.
 
 1. Run the hosted REST/service-role Postgres/RPC harness against the real Priced Supabase project. **Staging verified**: the protected key was held transiently in memory and `npm run test:postgres` passed all 8 real-project tests. Direct hosted database-level RPC concurrency is also **Staging verified**: the 10- and 25-request races had exactly one winner each and all other attempts returned `STALE_QUOTE`.
-2. Run 10 and 25 simultaneous challenger races through the hosted HTTP/payment path. The ten-way run is **External provider blocked** for complete Dodo Test Mode refund closure: exactly one takeover finalized and nine stale payments were identified, but the sandbox wallet returned `INSUFFICIENT_WALLET_FUNDS` for two refunds after seven were completed. A direct dashboard refund reproduced the same wallet error. The provider-outage path is **Staging verified**: the temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, was removed, and the normal deployment was restored. The 25-way HTTP/payment race remains unrun.
+2. Run 10 and 25 simultaneous challenger races through the hosted HTTP/payment path. The earlier ten-way provider-wallet issue was subsequently reconciled through successful Dodo Test Mode refunds and signed refund events. The clean 25-way run is now **Staging verified**: 25 provider successes produced exactly one consumed quote/sale, 24 stale quotes, zero expired quotes, and 24 successful full refunds. The provider-outage path is also **Staging verified**: the temporary invalid Dodo base URL returned `502 checkout_failed` before provider payment creation, was removed, and the normal deployment was restored.
 3. Run `npm run smoke:staging` against the stable beta deployment. **Staging verified** (10 checks pass, including every public HTML route).
 4. Verify Realtime across two sessions, including a live market update. **Staging verified** on `realtime-success-us-20260911.com`; the observer updated to `@harshit`, history, and the `$10` next price without reload.
 5. Complete the real journey: search, login, handle, quote, Dodo sandbox checkout, signed webhook, finalization, history, profile, analytics, CTA, share, and share visit. **Staging verified** for the exercised success path.
@@ -443,7 +511,7 @@ This phase is complete only when a real hosted beta environment successfully exe
 - Dodo Test Mode remained enabled throughout this work; no live mode and no real-money charge were used. Two additional disposable `$5.00` sandbox checkouts completed through the active Cloudflare beta. The India checkout displayed `$5.00` plus `$0.90` tax (`$5.90` total), while the US-address checkout displayed `$5.00` total. Both hosted return URLs reported `succeeded`, and their quotes were consumed by Priced.
 - The three previously wallet-blocked stale-race payments were retried from the Dodo Test Mode dashboard after those sandbox top-ups. Dodo now shows each payment as `Refunded` with a successful full refund; the three provider payment IDs are `pay_0NnNLRt51vzpSKrPYiqGo`, `pay_0NnNLRkBWr3jhkR93LF17`, and `pay_0NnNLRa5GaErAA8VLybb3`. Captured refund records include `ref_0NnoSO00Z5Z5ZaLRw5y3x` and `ref_0NnoT5WJ0vK3BnZQlLFlP`.
 - A delayed, read-only Supabase audit after reconciliation found all three corresponding Dodo refund rows in `succeeded` (`unknown_quote`, `unknown_quote`, and `provider_refund_event`). Seven older disposable `unknown_quote` rows remain `manual_review`, and one older row is `failed` with the explicit provider error `PAYMENT_ALREADY_REFUNDED`; these are the known provider-already-refunded cases from the earlier audit and are intentionally not force-mutated without an authoritative signed refund event. No customer-facing sale is associated with these rows.
-- `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging` passes all 10 checks after the sandbox work.
+- `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging` passed all 10 checks after the sandbox work (historical hostname).
 - The 25-way hosted HTTP/payment race remains **External provider blocked** and was not started: it would create 24 stale-payment refunds and, at the observed roughly `$6` wallet debit per refund, needs approximately `$144` of Test Mode wallet capacity plus reserve. The hosted database-level 10/25 concurrency races remain **Staging verified**.
 - The confirmed root cause remains Dodo Test Mode wallet capacity and refund fees/tax treatment—not a Priced `$5` versus `$5.90` pricing mismatch. The application validates the pre-tax market amount while the provider checkout may collect tax-inclusive totals.
 
@@ -482,7 +550,7 @@ This phase is complete only when a real hosted beta environment successfully exe
   timing gate remains **External provider blocked** until it can be run with
   all 25 quotes still within their five-minute TTL (or with separate signed-in
   challenger accounts), without weakening the deployed rate limits.
-- `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging`
+- `STAGING_URL=https://priced.harshit10sehgal.workers.dev npm run smoke:staging` (historical hostname)
   remains green with all 10 checks. Local `npm test` passes 258 tests with 0
   failures and 7 expected real-Postgres skips; `npm run typecheck` passes.
 
@@ -619,3 +687,63 @@ This phase is complete only when a real hosted beta environment successfully exe
   same-version 25-way payment gate remains **External provider blocked** until
   the prepared checkouts are paid and fully reconciled under the action-time
   confirmation requirement.
+
+## Earlier prepared-challenger payment completion — 2026-09-19
+
+- With the owner's explicit confirmation, all 25 prepared checkout sessions for
+  `dodo-same-version-20260919-mu7clq77.com` were submitted in Dodo Test Mode
+  using the documented success card. No live mode and no real-money charge was
+  used.
+- The hosted return pages and domain page converged to exactly one `consumed`
+  quote/sale at `$5.00`, held by `@racer1`. The other 24 quotes ended as
+  `expired` because the sequential browser submissions crossed the five-minute
+  quote TTL; no second takeover was recorded.
+- Dodo's Test Mode dashboard shows a successful full refund for all 24
+  non-winning payments. Twenty-one refunds were `$5.90` tax-inclusive provider
+  totals and three were `$5.00` totals; the Priced market amount remained
+  `$5.00` for every quote. This confirms the tax difference is provider-side and
+  is not a `$5.00` versus `$5.90` application mismatch.
+- This extends the hosted payment/refund evidence but does **not** clear the
+  clean same-version 25-way timing gate: only the first payment arrived inside
+  the five-minute TTL. The gate remains **External provider blocked** until all
+  25 payments can be submitted while their quotes are live, without weakening
+  the deployed limiter or TTL.
+
+## Latest clean same-version payment race — 2026-09-19
+
+- With the owner's explicit confirmation, all 25 prepared Dodo Test Mode
+  checkout sessions were submitted for
+  `dodo-same-version-20260919-faster-mu7eexh5.com` using four disposable,
+  authenticated challenger accounts. No live mode and no real-money charge was
+  used.
+- All 25 provider return pages reported `succeeded`. The hosted quote ledger
+  and public domain page converged to exactly one `consumed` quote/sale held by
+  `@fastrace1` at `$5.00`, 24 `stale` quotes, and zero `expired` quotes. The
+  page shows one immutable takeover record and no duplicate sale.
+- Dodo's Test Mode refund ledger matches the 24 non-winning payment IDs; all
+  24 are `Successful` `Full refund` records. The refunds were tax-inclusive
+  `$5.90` provider totals, while the Priced market amount remained `$5.00`.
+- This clears the strict clean same-version timing gate as **Staging
+  verified**. The deployed eight-per-window limiter, five-minute quote TTL,
+  server-authoritative amount checks, signed webhook path, atomic finalization,
+  and stale-payment refund behavior were exercised without weakening any
+  control.
+
+## Latest stale-artifact cleanup and release audit — 2026-09-19
+
+- The worktree was cleaned of the duplicate untracked `.agents/` skill copy and
+  regenerated `.next/`, `.open-next/`, `.wrangler/`, `test-results/`, and
+  `tsconfig.tsbuildinfo` artifacts. Project linkage metadata (`.vercel/`,
+  `.freebuff/`, and `.commandcode/`) was retained because it is still used by
+  the deployment/tooling setup.
+- An authenticated Supabase audit found no unclaimed hosted domains. Sold
+  sandbox domains and their immutable `sales`, payment-event, refund, and
+  provenance evidence were intentionally retained; deleting those rows would
+  destroy launch verification and ledger history.
+- Exactly 25 expired quote rows with no checkout/payment id were deleted. Every
+  checkout-linked quote and provider ledger row was retained so Dodo replay and
+  reconciliation remain explainable.
+- Release checks after cleanup are green: `npm run typecheck`, `npm run lint`,
+  `npm test` (274 tests, 267 pass, 0 fail, 7 expected real-Postgres skips),
+  `npm run build`, `npm run cf:build`, and the hosted 10-check smoke. The live
+  beta liveness, Supabase, Redis, and origin checks all returned healthy.

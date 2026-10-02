@@ -132,20 +132,25 @@ Do not enable Dodo Live Mode until the hosted sandbox integration is green and t
 The active free beta is now hosted on Cloudflare Workers. The existing Vercel
 project is retained as a rollback/reference deployment and is not the active
 beta origin. The active origin is
-`https://priced.harshit10sehgal.workers.dev`.
+`https://priced.pricedapp.workers.dev`.
 
 ## Current Cloudflare beta state
 
 - Worker name: `priced`
 - Account: the owner's authenticated Cloudflare account
-- Stable beta origin: `https://priced.harshit10sehgal.workers.dev`
+- Account workers.dev namespace: `pricedapp`
+- Stable beta origin: `https://priced.pricedapp.workers.dev`
+- The namespace change moved both deployed Workers. The other Worker is now
+  `freebuff-proxy.pricedapp.workers.dev`; the prior account namespace no longer
+  routes.
 - Cloudflare Worker deployment is configured with the Supabase public URL/key,
   server-only Supabase service-role key, Dodo Test Mode credentials, Upstash
   REST credentials, and `NEXT_PUBLIC_APP_URL`.
 - The Dodo Test Mode webhook endpoint is
-  `https://priced.harshit10sehgal.workers.dev/api/webhooks/payments`.
-- Supabase Site URL and the `/auth/callback` redirect allowlist include this
-  Cloudflare origin.
+  `https://priced.pricedapp.workers.dev/api/webhooks/payments`.
+- Supabase Site URL and the `/auth/callback` redirect allowlist still need to
+  be updated to this Cloudflare origin. Their previous settings point to the
+  retired hostname, so Google Auth on the new origin is not verified yet.
 - `NEXT_PUBLIC_*` values are INLINED at `cf:build` time. Export them in the
   build environment before building; Worker runtime secrets never reach the
   browser. `cf:deploy` uploads the last build output and does not rebuild. See
@@ -216,7 +221,8 @@ See `.env.example` for the complete matrix. Important variables are:
 - `NEXT_PUBLIC_APP_URL`
 - optional `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
 - optional `TURNSTILE_SECRET_KEY`
-- optional `SENTRY_DSN`
+- optional `ALERT_WEBHOOK_URL`
+- optional `SENTRY_DSN` (only effective if `@sentry/nextjs` is installed)
 
 Never commit actual secret values.
 
@@ -256,7 +262,7 @@ Verify the full chain:
 
 `search -> login -> handle -> quote -> Dodo checkout -> signed webhook -> atomic takeover -> immutable history -> holder profile -> analytics -> Realtime -> share -> second challenger -> stale/refund race`
 
-Also run 10 and 25 simultaneous challenger races against the real hosted environment. Exactly one takeover may finalize for one market version. The database-level 10/25 concurrency harness is already staging-verified; the remaining end-to-end payment race is blocked by Dodo Test Mode wallet funds for stale-payment refunds.
+Also run 10 and 25 simultaneous challenger races against the real hosted environment. Exactly one takeover may finalize for one market version. The database-level 10/25 concurrency harness and the clean hosted 25-way Dodo Test Mode payment/refund race are staging-verified: exactly one takeover finalized, 24 quotes became stale, zero quotes expired, and all 24 losing payments were fully refunded. Do not weaken the deployed limiter or five-minute quote TTL.
 
 ## Test commands
 

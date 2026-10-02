@@ -1,0 +1,151 @@
+name: Money-path alerts
+
+# Durable safety-net alerting for the money ledger.
+#
+# The PRIMARY, real-time path is `ALERT_WEBHOOK_URL` in the app (DEPLOY.md §8):
+# every error-level money event is pushed the moment it happens. This workflow
+# is the BACKSTOP that also catches what the app might never log — a payment
+# that reached the provider but whose webhook never arrived, a refund the
+# ledger parked for manual review, or a stretch where the webhook sink was
+# unconfigured. It queries the hosted Supabase ledger directly with the service
+# role and, when it finds unresolved rows, opens or updates ONE GitHub issue
+# labelled `money-alert`.
+#
+# Free-tier by design: GitHub Actions cron, no paid service, no new secrets
+# beyond the two analytics retention already uses.
+#
+# SETUP (owner): add repository secrets
+#   SUPABASE_PROJECT_URL       e.g. https://<ref>.supabase.co
+#   SUPABASE_SERVICE_ROLE_KEY
+# The job SKIPS cleanly when they are absent, so it is safe to merge first —
+# but while it skips, nothing is being checked.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    name: Scan money ledger
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Query unresolved refunds and errored payment events
+        id: scan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_PROJECT_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SERVICE_ROLE_KEY:-}" ]; then
+            echo "::warning::Supabase secrets not configured — money-path alerting is NOT running."
+            echo "Add SUPABASE_PROJECT_URL and SUPABASE_SERVICE_ROLE_KEY to enable it."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base="${SUPABASE_URL%/}/rest/v1"
+          hdr_key="apikey: ${SERVICE_ROLE_KEY}"
+          hdr_auth="Authorization: Bearer ${SERVICE_ROLE_KEY}"
+
+          # Refunds the ledger could not complete: a definitive failure, or a
+          # payment parked for manual reconciliation (money not yet returned).
+          refunds=$(curl --fail --silent --show-error --max-time 60 \
+            "$base/refunds?select=provider,provider_payment_id,status,attempts,last_error,created_at&status=in.(failed,manual_review)&order=created_at.desc&limit=100" \
+            -H "$hdr_key" -H "$hdr_auth")
+
+          # Webhook rows the handler could not process (the provider retries,
+          # but a persistent error means something is genuinely wrong).
+          events=$(curl --fail --silent --show-error --max-time 60 \
+            "$base/payment_events?select=provider,provider_event_id,provider_payment_id,event_type,error,created_at&status=eq.error&order=created_at.desc&limit=100" \
+            -H "$hdr_key" -H "$hdr_auth")
+
+          n_refunds=$(printf '%s' "$refunds" | jq 'if type=="array" then length else -1 end')
+          n_events=$(printf '%s' "$events"  | jq 'if type=="array" then length else -1 end')
+
+          # A non-array response means we could not read the ledger. Fail loudly
+          # rather than report a false all-clear.
+          if [ "$n_refunds" -lt 0 ] || [ "$n_events" -lt 0 ]; then
+            echo "::error::Unexpected ledger response: refunds=$n_refunds events=$n_events"
+            exit 1
+          fi
+
+          echo "refunds=$n_refunds  events=$n_events"
+          echo "n_refunds=$n_refunds" >> "$GITHUB_OUTPUT"
+          echo "n_events=$n_events" >> "$GITHUB_OUTPUT"
+          if [ "$n_refunds" -gt 0 ] || [ "$n_events" -gt 0 ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo "refunds_json<<MONEY_EOF"
+            printf '%s' "$refunds" | jq '.'
+            echo "MONEY_EOF"
+            echo "events_json<<MONEY_EOF"
+            printf '%s' "$events" | jq '.'
+            echo "MONEY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the money-alert issue
+        if: steps.scan.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N_REFUNDS: ${{ steps.scan.outputs.n_refunds }}
+          N_EVENTS: ${{ steps.scan.outputs.n_events }}
+          REFUNDS_JSON: ${{ steps.scan.outputs.refunds_json }}
+          EVENTS_JSON: ${{ steps.scan.outputs.events_json }}
+        run: |
+          set -euo pipefail
+          gh label create money-alert \
+            --color B60205 \
+            --description "Unresolved money-path ledger rows needing reconciliation" \
+            --force >/dev/null
+
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body=$(cat <<EOF
+          The scheduled money-ledger scan found unresolved rows at $(date -u +%Y-%m-%dT%H:%M:%SZ).
+
+          - refunds not completed (failed / manual_review): **${N_REFUNDS}**
+          - payment_events in error state: **${N_EVENTS}**
+
+          Operator runbook: DEPLOY.md §8 (structured events) and \`db/ops.sql\` (manual refund/audit).
+          Reconcile in the provider dashboard, then confirm the ledger row flips to \`succeeded\`.
+
+          <details><summary>refunds</summary>
+
+          \`\`\`json
+          ${REFUNDS_JSON}
+          \`\`\`
+
+          </details>
+
+          <details><summary>payment_events</summary>
+
+          \`\`\`json
+          ${EVENTS_JSON}
+          \`\`\`
+
+          </details>
+
+          Run: ${run_url}
+          EOF
+          )
+
+          existing=$(gh issue list --label money-alert --state open --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+            echo "Commented on existing money-alert issue #$existing"
+          else
+            gh issue create \
+              --title "Money-path alert: unresolved ledger rows" \
+              --label money-alert \
+              --body "$body"
+          fi
+
