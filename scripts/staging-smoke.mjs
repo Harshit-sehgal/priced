@@ -103,4 +103,24 @@ console.log(`Staging smoke against ${BASE}`);
   console.log("  ✓ public HTML routes render (login, welcome, legal)");
 }
 
+{
+  // The signed webhook endpoint is the ONLY path that can finalize a takeover,
+  // and it is deliberately excluded from the session proxy — so a routing or
+  // deploy regression could take it offline while liveness, db, redis, origin
+  // and every page check stay green. An UNSIGNED POST must be rejected with
+  // 400 (signature verification runs before any DB write, so this probe
+  // creates no payment_event and moves no money). 503 is also acceptable: it
+  // means the endpoint is live but the payment datastore is unconfigured
+  // (demo). Anything else — especially a 404/405/5xx — is a money-path outage.
+  const res = await fetch(`${BASE}/api/webhooks/payments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: "evt_smoke_unsigned", type: "payment.failed" }),
+  });
+  if (res.status !== 400 && res.status !== 503) {
+    fail(`POST /api/webhooks/payments unsigned expected 400 (rejected) or 503 (unconfigured), got ${res.status}`);
+  }
+  console.log(`  ✓ /api/webhooks/payments reachable, unsigned rejected (${res.status})`);
+}
+
 console.log("Staging smoke: OK");

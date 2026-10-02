@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      STAGING_URL: https://priced.harshit10sehgal.workers.dev
+      STAGING_URL: https://priced.pricedapp.workers.dev
     steps:
       - name: Check liveness
         run: |
@@ -69,4 +69,24 @@ jobs:
           curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
             "$STAGING_URL/api/health?check=origin" > /tmp/health-origin.json
           grep -q '"origin":"ok"' /tmp/health-origin.json
+
+
+      # The signed webhook endpoint is the ONLY path that can finalize a
+      # takeover, and it is excluded from the session proxy — so a routing or
+      # deploy regression could take it offline while every other probe stays
+      # green. An UNSIGNED POST is rejected with 400 before any DB write, so
+      # this probe creates no payment_event and moves no money. 503 is also
+      # acceptable (endpoint live, payment datastore unconfigured).
+      - name: Check the payment webhook endpoint is reachable
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 --max-time 20 \
+            -o /dev/null -w '%{http_code}' -X POST "$STAGING_URL/api/webhooks/payments" \
+            -H 'content-type: application/json' \
+            -d '{"id":"evt_health_probe","type":"payment.failed"}')
+          if [ "$status" != "400" ] && [ "$status" != "503" ]; then
+            echo "::error::/api/webhooks/payments unsigned POST returned $status (expected 400 or 503)"
+            exit 1
+          fi
+          echo "  ✓ /api/webhooks/payments reachable (unsigned rejected: $status)"
 

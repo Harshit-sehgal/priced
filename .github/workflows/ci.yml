@@ -164,4 +164,4 @@ jobs:
       - name: Run hosted smoke
         run: npm run smoke:staging
         env:
-          STAGING_URL: https://priced.harshit10sehgal.workers.dev
+          STAGING_URL: https://priced.pricedapp.workers.dev

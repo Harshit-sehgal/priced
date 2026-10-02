@@ -1,7 +1,7 @@
 # Vercel Commercial Use Gate
 
 The active free beta now runs on Cloudflare Workers at
-`https://priced.harshit10sehgal.workers.dev`; the Vercel project is retained
+`https://priced.pricedapp.workers.dev`; the Vercel project is retained
 for rollback/reference. This gate remains relevant only if Vercel is selected
 again for real-money production. Cloudflare's applicable commercial terms and
 limits must still be reviewed before enabling live payments there.
