@@ -97,7 +97,7 @@ Playwright suite (119 pass, 1 intentional skip), `npm run build`,
 vulnerabilities). The staging smoke and OG checks above were then re-run against
 the deployed Worker.
 
-## Launch-readiness pass — 2026-10-06
+## Launch-readiness pass (pre-deploy snapshot) — 2026-10-06
 
 - Updated public copy and README to describe Priced as a paid ranking/listing
   platform and remove leftover statements that called prices or sharing a
@@ -143,6 +143,81 @@ the deployed Worker.
   grievance disclosures; backup and alert secrets; fresh-account auth-flow
   verification; deployment of the reviewed public copy; and cleanup/review of
   sandbox records. Dodo remains in Test Mode.
+
+## Post-merge beta verification — 2026-10-06
+
+PR #83 was marked ready, passed the required GitHub `verify` job, hosted beta
+smoke, and Vercel preview, then merged to `main` as `9ffb2f6`. No pull requests
+remain open.
+
+- The merged code is deployed to the stable Cloudflare beta origin
+  `https://priced.pricedapp.workers.dev`, Worker version
+  `c0d9d09f-3573-47a6-a7d6-45d2cdf068bb`. The build used the existing Priced
+  Supabase public URL/key and the stable beta origin. Dodo secrets were left in
+  their existing Test Mode configuration; no live credential or mode change
+  was made.
+- Hosted smoke on that deployment passed 11/11 checks: liveness, Supabase,
+  public routes, analytics validation, malformed quote requests, callback
+  redirect, 404 behavior, and unsigned webhook rejection.
+- On the deployed site, the signed-in existing owner account reached a new
+  disposable `$5` quote and the age dialog appeared. The confirmation button
+  remained disabled until its checkbox was selected. The dialog was cancelled;
+  no age attestation, Dodo checkout, or payment was submitted. This verifies
+  the UI gate on the hosted build, not a complete provider checkout with the
+  age gate.
+- Clean-commit checks passed: `npm run typecheck`, `npm run lint`, `npm test`
+  (281 tests: 274 passed, 7 expected Postgres skips), `npm run test:pg` (36/36),
+  `npm run test:concurrency` (207 tests: 200 passed, 7 expected skips),
+  `npm run test:browser` (121 passed, 1 existing skip), `npm run build`,
+  `npm run cf:build`, `npm run test:schema`, and
+  `npm audit --omit=dev` (0 vulnerabilities). `sharp` is pinned to patched
+  `0.35.5`, including Miniflare. Full `npm audit` still exits non-zero with
+  five high-severity paths from the unpatched dev-only `braces` advisory in
+  the Next lint dependency chain; `npm audit fix --force` proposes a breaking
+  downgrade of `eslint-config-next` and was not applied.
+- The previously documented clean hosted 25-way Dodo Test Mode race remains
+  **Staging verified** for the code/version tested then. It is not evidence
+  that the newly deployed age-gated checkout completed end-to-end. The latest
+  Dodo Test Mode matrix remains partial for this build.
+
+### Remaining owner/legal gates before real-money payments
+
+- The age prompt is an **18+ self-attestation**, not independent age
+  verification. A minor could falsely select it. Do not describe this as
+  verified age or a legal compliance certification. A real adult tester must
+  perform any hosted checkout that submits this assertion.
+- Obtain written Indian counsel review of the paid-ranking business model,
+  transaction/consumer disclosures, seller/operator and grievance identity,
+  refunds, tax invoicing, privacy/analytics, and the suitability of
+  self-attestation. The owner wants no public personal name; resolve that with
+  counsel before taking live payments. The Majority Act sets majority at 18 for
+  persons domiciled in India and the Contract Act ties capacity to majority,
+  but that does not decide whether this product needs stronger age checks.
+- Counsel must assess whether the actual product is within the Promotion and
+  Regulation of Online Gaming Act/Rules and whether the paid placement is an
+  e-commerce/sponsored listing. The 2026 online gaming rules took effect
+  2026-05-01. The 2026 E-Commerce amendments take effect 2027-01-01 and address
+  sponsored-listing disclosure, search results, grievance handling, and seller
+  disclosures. DPDP commencement is phased; specified core provisions begin
+  18 months after the 2025-11-13 notification (2027-05-13).
+- The full hosted Test Mode provider matrix still needs an adult tester for
+  success, failure, cancellation, duplicate event/webhook, stale quote/refund,
+  refund failure, provider outage/retry, and wrong/missing metadata scenarios
+  on the deployed age-gated version. Do not reuse real card data in Test Mode.
+- Fresh-account Google OAuth → welcome → handle creation has not been verified;
+  only the existing owner account has passed sign-in/sign-out/sign-in.
+- Public beta pages still show historical Dodo/sandbox test tags and sales.
+  Preserve immutable history; the owner must review whether/how to label these
+  before inviting beta users. Do not delete hosted sales or payment records.
+- Confirm backup and alert secrets and recovery readiness before live mode.
+  Keep Dodo in Test Mode until all these owner gates are explicitly cleared.
+
+Legal references checked for this status: [India Code Majority Act, 1875](https://www.indiacode.nic.in/bitstream/123456789/15299/1/majorityact.pdf),
+[India Code Contract Act, 1872](https://www.indiacode.nic.in/bitstream/123456789/2187/2/A187209.pdf),
+[MeitY Promotion and Regulation of Online Gaming Act, 2025](https://www.meity.gov.in/static/uploads/2025/10/8a7f103cefc68ed8aaa2ebc9a2ed7c13.pdf),
+[MeitY Promotion and Regulation of Online Gaming Rules, 2026](https://www.meity.gov.in/static/uploads/2026/04/7e0b02d37fd07f81fa48578a9996aa85.pdf),
+[MeitY DPDP commencement notification](https://www.meity.gov.in/static/uploads/2025/11/c56ceae6c383460ca69577428d36828b.pdf), and
+[PIB E-Commerce amendment summary](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2308759&lang=1&reg=48).
 
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 
