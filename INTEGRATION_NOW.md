@@ -97,6 +97,30 @@ Playwright suite (119 pass, 1 intentional skip), `npm run build`,
 vulnerabilities). The staging smoke and OG checks above were then re-run against
 the deployed Worker.
 
+## Launch-readiness pass — 2026-10-06
+
+- Updated public copy and README to describe Priced as a paid ranking/listing
+  platform and remove leftover statements that called prices or sharing a
+  “game.” This is product-copy accuracy, not a legal classification.
+- Current branch checks: `npm test` (279 tests, 272 pass, 0 fail, 7 expected
+  real-Postgres skips), typecheck, lint, production build, and browser suite
+  (119 pass, 1 existing skip). The active Cloudflare beta smoke passed 11/11.
+- The fresh full `npm audit` now reports five high-severity package findings
+  caused by one GitHub-reviewed advisory, CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm,
+  for `braces@3.0.3` (stack exhaustion on deeply nested brace patterns). The
+  advisory currently lists no patched release. The dependency is reachable
+  only through the development-time `eslint-config-next` → `fast-glob` →
+  `micromatch` chain; `npm audit --omit=dev` reports zero vulnerabilities. Do
+  not use `npm audit fix --force`: npm proposes downgrading the Next lint config
+  to 14.2.35. Recheck for an upstream fix before a later release.
+- PR #83 is still a draft and these changes are not deployed. Supabase Auth on
+  the Cloudflare origin remains Owner blocked pending the URL/redirect update
+  and a real Google sign-in. The Dodo Test Mode matrix is still partial.
+- Real-money launch remains blocked on written Indian legal review, including
+  buyer age/capacity and the paid ranking's statutory classification; legal
+  seller/operator and grievance disclosures; backup and alert secrets; and
+  active-origin Auth verification. Dodo remains in Test Mode.
+
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 
 The designated free-tier beta origin at that time was Cloudflare Workers:
