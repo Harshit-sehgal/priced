@@ -5,7 +5,7 @@ type Row = { domain: string; sales: number; priceCents: number; holderHandle: st
 
 /**
  * "Most fought over" module (§39/P1): domains that changed hands more than
- * once, ranked by sale count. This is the social proof of the game — tags
+ * once, ranked by sale count. This is the social proof of the platform — tags
  * people thought were worth fighting for.
  */
 export function MostContested({ rows }: { rows: Row[] }) {

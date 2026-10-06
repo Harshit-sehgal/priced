@@ -52,8 +52,8 @@ export default function RefundsPage() {
       <h2 className="display" style={{ fontSize: 18 }}>A completed takeover is not refundable</h2>
       <p>
         Once the tag is yours, the payment is final. It is <strong>not</strong> refundable because
-        somebody later took the tag from you — that is the entire game, it was always going to
-        happen, and it is stated everywhere on this site before you pay. You bought temporary holder
+        somebody later took the tag from you — a higher accepted offer replaces your display
+        position, and this is stated everywhere on this site before you pay. You bought temporary holder
         status and the duration was never guaranteed. The one exception is above: if the operator
         reserves the tag for safety, the last payment is refunded.
       </p>

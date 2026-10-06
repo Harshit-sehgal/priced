@@ -19,10 +19,12 @@ export default function TermsPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>1. What you are buying</h2>
       <p>
-        Priced is a public game. Paying an accepted offer buys{" "}
-        <strong>temporary symbolic holder status</strong> on a domain&apos;s price tag as displayed
-        on this website, and a permanent line in this website&apos;s history. It lasts until
-        somebody else makes a higher accepted offer. That is the entire product.{" "}
+        Priced is a paid ranking and listing platform. Paying an accepted offer buys{" "}
+        <strong>a temporary symbolic display position</strong> on a domain&apos;s price tag and a
+        permanent line in this website&apos;s history. The position lasts until somebody else makes a
+        higher accepted offer. Payments buy the platform&apos;s display service; they are not paid to
+        the current holder, and holder status cannot be redeemed for money. That is the entire
+        product.{" "}
         <Link href="/about">Longer explanation here</Link>.
       </p>
 
@@ -73,7 +75,7 @@ export default function TermsPage() {
         do not endorse anything a holder links to.
       </p>
 
-      <h2 className="display" style={{ fontSize: 18 }}>7. Tags we keep out of the game</h2>
+      <h2 className="display" style={{ fontSize: 18 }}>7. Tags we keep off the list</h2>
       <p>
         Some domains are blocked because a tag on them could be used to mislead — banks, crypto
         wallets, government and similar. We may add to that list at any time, including after a tag

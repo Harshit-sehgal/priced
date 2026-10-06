@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "What this is",
   description:
-    "Priced is a public game where people pay to be the temporary symbolic holder of a familiar domain's price tag. Not the actual domain.",
+    "Priced is a paid ranking platform where people buy a temporary symbolic position on a familiar domain's price tag. Not the actual domain.",
 };
 
 export default function AboutPage() {
@@ -66,8 +66,8 @@ export default function AboutPage() {
         <h2 className="display display-section">What you are actually buying</h2>
         <p>
           The right for <em>this website</em> to display your handle on a tag, and to keep your name
-          in its history. That is the entire product. It is a status marker on a made-up
-          leaderboard, and it is meant to be funny.
+          in its history. That is the entire product: a temporary position in Priced&apos;s own
+          public ranking list, with a profile, link, history and analytics.
         </p>
         <div className="notice">
           <strong>You do not get:</strong> the domain, the website, DNS, the trademark, the company,
@@ -100,7 +100,8 @@ export default function AboutPage() {
         </p>
         <p className="small muted" style={{ margin: 0 }}>
           A takeover that <em>did</em> happen is not refundable just because somebody later took the
-          tag from you. That was always going to happen. It&apos;s the game.{" "}
+          tag from you. A higher accepted offer replaces your display position. That is how the
+          platform works.{" "}
           <Link href="/refunds">Full refund policy</Link>.
         </p>
       </section>
@@ -109,7 +110,7 @@ export default function AboutPage() {
         <h2 className="display display-section">Some tags are off limits</h2>
         <p>
           A small blocklist keeps tags that could be used to impersonate someone dangerous — banks,
-          wallets, government sites — out of the game. Handles that pretend to be staff or to be us
+          wallets, government sites — off the public list. Handles that pretend to be staff or to be us
           are refused too. If a tag or a handle is being used to mislead people,{" "}
           <Link href="/terms">tell us</Link> and it comes down.
         </p>

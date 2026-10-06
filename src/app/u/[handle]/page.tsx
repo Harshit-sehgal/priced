@@ -235,7 +235,7 @@ export default async function HolderPage({ params }: Params) {
       </section>
 
       <section className="notice">
-        <strong>Reminder:</strong> these are symbolic price tags on a public game. Holdings do not
+        <strong>Reminder:</strong> these are symbolic price tags on a public ranking platform. Holdings do not
         include the domain, website, company, trademark, or anything the domain represents.
       </section>
     </div>
