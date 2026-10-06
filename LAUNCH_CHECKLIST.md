@@ -158,7 +158,7 @@ staging smoke are green.
 
 | Item | Status |
 |---|---|
-| Terms/Privacy/Refunds copy (plain-language, non-ownership distinction and support email) | Implemented; professional review Owner blocked pending operator identity/address, grievance contact, legal classification, and tax/privacy review (BACKLOG.md D1) |
+| Terms/Privacy/Refunds copy (plain-language, non-ownership distinction and support email) | Implemented; professional review Owner blocked pending operator identity/address, minor-purchase capacity/age policy, grievance contact, legal classification, and tax/privacy review (BACKLOG.md D1). Owner currently wants under-18 purchases; app has no age gate. |
 | Dodo product-classification confirmation | Implemented (owner-confirmed; see `AGENTS.md` and `INTEGRATION_NOW.md`) |
 
 ## Documentation
