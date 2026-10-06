@@ -88,12 +88,9 @@ export default function RefundsPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>Getting in touch</h2>
       <p>
-        During the beta, the channel is the repository issue tracker. A private billing-support
-        address is published before real-money payments are enabled.{" "}
-        <strong>
-          Never post card details, full provider references, or other private billing information in
-          a public issue.
-        </strong>
+        For billing support, email{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Never send
+        card numbers or payment credentials by email.
       </p>
 
       <p className="small muted">

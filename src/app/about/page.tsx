@@ -120,8 +120,9 @@ export default function AboutPage() {
         <strong>Right now this is a beta.</strong> It runs on free infrastructure with test
         payments while the money path is being proven end to end. Before a single real rupee or
         dollar changes hands, the legal documents get a professional review and the operating
-        entity, jurisdiction and support contact get named properly. Until then, treat everything
-        here as a public experiment that happens to have a checkout button.
+        entity, address, jurisdiction and grievance contact get confirmed. For support, email{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Until then,
+        treat everything here as a public beta that happens to have a test checkout.
       </section>
     </article>
   );

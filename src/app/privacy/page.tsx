@@ -101,9 +101,9 @@ export default function PrivacyPage() {
         is processed outside it.
       </p>
       <p className="small muted" style={{ margin: 0 }}>
-        During the beta the contact for any privacy request is the repository issue tracker; a real
-        address is published before real-money launch.{" "}
-        <strong>Never post payment details in a public issue.</strong>
+        For privacy requests, email{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Do not email
+        card numbers or payment credentials.
       </p>
 
       <p className="small muted">

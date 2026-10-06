@@ -94,9 +94,8 @@ export default function TermsPage() {
       <h2 className="display" style={{ fontSize: 18 }}>9. Takedowns and complaints</h2>
       <p>
         If you operate a domain and want its tag removed, or a handle or link is impersonating you,
-        say so and we will act on it. During the beta the channel is the repository issue tracker; a
-        proper contact address is published before real-money launch.{" "}
-        <strong>Never post payment details or private billing information in a public issue.</strong>
+        email <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Do not
+        email payment credentials or full card details.
       </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>10. Availability</h2>
@@ -112,13 +111,14 @@ export default function TermsPage() {
       <p>
         These are plain-language working terms, not a finished legal agreement, and they have not
         been reviewed by a lawyer. Before real money is accepted, they are replaced by documents
-        reviewed under the operating jurisdiction, naming the operating entity, the governing law,
-        the dispute-resolution process, and a real support address. Until then the beta runs on test
-        payments. Nothing here limits consumer rights you have by law.
+        reviewed under the operating jurisdiction, naming the operating entity and address, the
+        grievance contact, governing law, and dispute-resolution process. Until then the beta runs
+        on test payments. Nothing here limits consumer rights you have by law.
       </p>
 
       <p className="small muted">
-        Last updated with the beta. Contact: repository issue tracker. See also{" "}
+        Last updated with the beta. Contact:{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. See also{" "}
         <Link href="/privacy">Privacy</Link> and <Link href="/refunds">Refunds</Link>.
       </p>
     </article>

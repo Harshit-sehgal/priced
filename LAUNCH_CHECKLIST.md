@@ -158,7 +158,7 @@ staging smoke are green.
 
 | Item | Status |
 |---|---|
-| Terms/Privacy/Refunds copy (plain-language, non-ownership distinction) | Implemented; professional review Owner blocked (BACKLOG.md D1) |
+| Terms/Privacy/Refunds copy (plain-language, non-ownership distinction and support email) | Implemented; professional review Owner blocked pending operator identity/address, grievance contact, legal classification, and tax/privacy review (BACKLOG.md D1) |
 | Dodo product-classification confirmation | Implemented (owner-confirmed; see `AGENTS.md` and `INTEGRATION_NOW.md`) |
 
 ## Documentation
@@ -177,7 +177,7 @@ staging smoke are green.
 2. **Sandbox gate** (§4/B1): the clean hosted same-version 25-payment race is now **Staging verified** with exactly one takeover, 24 stale quotes, zero expired quotes, and 24 successful full refund-ledger rows. The deployed eight-per-window limiter and five-minute TTL were preserved. The provider-outage case is also Staging verified, and the normal deployment has a passing `npm run smoke:staging` result. The remaining payment-matrix items are the owner/provider-gated cases documented in `BACKLOG.md` and `DEPLOY.md`.
 3. **Monitoring** (§8/A8): set the `ALERT_WEBHOOK_URL` Worker secret (Slack/Discord/generic collector) to switch on real-time error alerting. The scheduled ledger backstop `.github/workflows/money-alerts.yml` is now operational: the `SUPABASE_PROJECT_URL` and `SUPABASE_SERVICE_ROLE_KEY` repository secrets already exist (added 2026-09-13 for analytics retention), and a workflow_dispatch proved it reads the hosted ledger and files/updates the `money-alert` issue. Add an external uptime check if desired; Vercel Hobby's `Add Drain`/`Add Rule`/`Add Webhook` controls were disabled and apply only to the rollback deployment.
 4. **Backup/recovery**: the documented logical dump and isolated restore procedure is Staging verified, and `.github/workflows/backup.yml` now takes a **daily** logical dump (`pg_dump` via the `postgres:17` image) and uploads it as a 30-day artifact — set the `SUPABASE_DB_URL` secret to enable it. Supabase Free Plan has no managed project backups; do not enable PITR during the free beta phase. Managed backups/PITR remain required before real-money production.
-5. **Legal review** of policy pages (D1).
+5. **Legal review (D1; Owner blocked):** Indian counsel must assess whether paid competitive position-taking with outbound business links falls within the Promotion and Regulation of Online Gaming Act, 2025 and its 2026 Rules; review Consumer Protection (E-Commerce) Rules disclosures, operator legal name/address, grievance-officer designation and response process, buyer geography/age limits, privacy/data transfers, GST/invoicing, and Dodo terms. The owner supplied `social.official.me@gmail.com` as the support email; this does not establish the legal seller identity or satisfy any required officer designation. Keep Dodo in Test Mode until written classification advice and launch documents are complete.
 6. **Live keys** (D2): swap to live Dodo config in Production only after every sandbox gate is green and plan compliance is reviewed.
 7. **Closed beta** (D3): 10–20 people; watch `takeover_succeeded`, `refund_failed`, and share visits; measure repeat-challenge rate (§35 metrics list).
 8. **Public launch** only after §37 gate is fully green.
