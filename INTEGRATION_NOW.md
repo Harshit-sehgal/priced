@@ -117,9 +117,10 @@ the deployed Worker.
   the Cloudflare origin remains Owner blocked pending the URL/redirect update
   and a real Google sign-in. The Dodo Test Mode matrix is still partial.
 - Real-money launch remains blocked on written Indian legal review, including
-  buyer age/capacity and the paid ranking's statutory classification; legal
-  seller/operator and grievance disclosures; backup and alert secrets; and
-  active-origin Auth verification. Dodo remains in Test Mode.
+  buyer age/capacity, upcoming DPDP child-data consent/tracking requirements,
+  and the paid ranking's statutory classification; legal seller/operator and
+  grievance disclosures; backup and alert secrets; and active-origin Auth
+  verification. Dodo remains in Test Mode.
 
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 
