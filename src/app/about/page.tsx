@@ -56,8 +56,9 @@ export default function AboutPage() {
         </p>
         <p className="small muted" style={{ margin: 0 }}>
           The minimum rule is fixed and the server decides it. Your selected offer can be higher,
-          and becomes the new displayed price. Prices never go down, tags are never delisted, and
-          nobody gets a discount for asking nicely.
+          and becomes the new displayed price. Completed takeovers only raise a tag&apos;s displayed
+          price. Tags may be reserved or removed under the safety rules in our Terms. Nobody gets a
+          discount for asking nicely.
         </p>
       </section>
 

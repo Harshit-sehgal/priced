@@ -45,9 +45,11 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Product analytics.</strong> Which pages and tags were opened, the domain or handle
-          involved, and a random per-tab session id kept in your browser&apos;s{" "}
-          <span className="mono">sessionStorage</span>. It is not tied to your identity and it
-          disappears when you close the tab.
+          involved, and event details. Some server-side events for signed-in users include an
+          internal account id and chosen handle. Browser events may include a random per-tab
+          session id kept in your browser&apos;s <span className="mono">sessionStorage</span>. Signed-in
+          analytics can be associated with your account; the per-tab session id disappears from
+          your browser when you close the tab.
         </li>
       </ul>
 
@@ -61,9 +63,10 @@ export default function PrivacyPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>Your IP address</h2>
       <p>
-        Used transiently to rate-limit abuse, and <strong>never written to the database</strong>. It
-        lives only as a short-lived counter key that expires within minutes. We do not log IP
-        addresses against your account or your activity.
+        Priced uses your IP address transiently to rate-limit abuse and does not store it in the
+        application database. Cloudflare and other infrastructure providers may process connection
+        data under their own service terms and privacy documents, with retention periods that may
+        differ from Priced&apos;s.
       </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>Cookies and connections</h2>
