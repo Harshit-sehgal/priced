@@ -66,6 +66,10 @@ export default function TermsPage() {
         public forever. Handles that impersonate staff, the site itself, or any person or brand are
         refused or removed. One person, one account; do not share or sell accounts.
       </p>
+      <p>
+        You must be 18 or older to make a paid offer. Before checkout, you must confirm that you
+        meet this requirement. Do not pay if you are under 18.
+      </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>6. Your profile link</h2>
       <p>

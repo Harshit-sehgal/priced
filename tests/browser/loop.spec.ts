@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { handleFor, uniqueDomain } from "./helpers";
+import { confirmAdultAndContinue, handleFor, uniqueDomain } from "./helpers";
 
 test.describe("full takeover loop (demo mode)", () => {
   test("search → claim → quote → mock payment → receipt → share", async ({ page }) => {
@@ -22,7 +22,7 @@ test.describe("full takeover loop (demo mode)", () => {
     await expect(page.getByText("You are buying:")).toBeVisible();
 
     // Demo checkout (drives the real signed-webhook path).
-    await page.getByRole("button", { name: "Continue to payment" }).click();
+    await confirmAdultAndContinue(page);
     await expect(page).toHaveURL(/\/checkout\/mock/);
     await expect(page.getByText("Simulated payment")).toBeVisible();
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
@@ -51,7 +51,7 @@ test.describe("full takeover loop (demo mode)", () => {
     await page.goto(`/domain/${domain}`);
     await page.getByRole("button", { name: "Continue with this offer" }).click();
     await expect(page).toHaveURL(/\/takeover\//);
-    await page.getByRole("button", { name: "Continue to payment" }).click();
+    await confirmAdultAndContinue(page);
     await expect(page).toHaveURL(/\/checkout\/mock/);
 
     await page.getByRole("button", { name: "Simulate decline" }).click();
@@ -70,7 +70,7 @@ test.describe("holder profiles (/u/[handle])", () => {
 
     await page.goto(`/domain/${domain}`);
     await page.getByRole("button", { name: "Continue with this offer" }).click();
-    await page.getByRole("button", { name: "Continue to payment" }).click();
+    await confirmAdultAndContinue(page);
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
 
@@ -89,6 +89,25 @@ test.describe("holder profiles (/u/[handle])", () => {
     const ghost = `ghost${Date.now().toString(36).slice(-6)}`;
     await page.goto(`/u/${ghost}`);
     await expect(page.getByText("holds nothing yet")).toBeVisible();
+  });
+
+  test("checkout needs an explicit 18+ confirmation", async ({ page }) => {
+    const domain = uniqueDomain();
+    await handleFor(page.request);
+    await page.goto(`/domain/${domain}`);
+    await page.getByRole("button", { name: "Continue with this offer" }).click();
+    await expect(page).toHaveURL(/\/takeover\//);
+
+    await page.getByRole("button", { name: "Continue to payment" }).click();
+    const dialog = page.getByRole("dialog", { name: "Before you continue" });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole("button", { name: "Confirm and continue" })).toBeDisabled();
+    await page.getByRole("button", { name: "Not now" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/takeover\//);
+
+    await confirmAdultAndContinue(page);
+    await expect(page).toHaveURL(/\/checkout\/mock/);
   });
 });
 

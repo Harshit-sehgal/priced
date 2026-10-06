@@ -7,6 +7,8 @@ import { rateLimitAll } from "@/lib/ratelimit";
 import { persistAnalyticsEvent } from "@/lib/analytics-server";
 import { logEvent } from "@/lib/logger";
 import { clientIp } from "@/lib/client-ip";
+import { isAuthConfigured } from "@/lib/auth";
+import { ADULT_ATTESTATION_COOKIE, getCookieValue, verifyAdultAttestationToken } from "@/lib/adult-attestation";
 
 export async function POST(req: Request) {
   // JSON-only: cross-origin form posts cannot produce this content type (§46 CSRF).
@@ -74,6 +76,18 @@ export async function POST(req: Request) {
   if (new Date(quote.expiresAt).getTime() < Date.now()) {
     await markQuoteStatus(quote.id, "expired");
     return NextResponse.json({ error: "quote_expired" }, { status: 409 });
+  }
+
+  if (isAuthConfigured) {
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!secret) return NextResponse.json({ error: "age_confirmation_unavailable" }, { status: 503 });
+    const token = getCookieValue(req.headers.get("cookie"), ADULT_ATTESTATION_COOKIE);
+    if (!(await verifyAdultAttestationToken(token, secret, user.id, quote.id))) {
+      return NextResponse.json(
+        { code: "AGE_CONFIRMATION_REQUIRED", error: "age_confirmation_required" },
+        { status: 403 },
+      );
+    }
   }
 
   // Reuse the profile just fetched above.

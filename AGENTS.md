@@ -35,6 +35,8 @@ A holder can receive product value through:
 
 Follow-up product ideas such as collections, achievements, trending exposure, and verified actual-domain-owner badges are not current integration priorities.
 
+Paid buyers must be 18 or older. Checkout requires an affirmative age confirmation and a short-lived server-verified attestation. This is self-attestation, not independent age or identity verification; do not collect date of birth or identity documents for this gate.
+
 ## Locked market mechanics
 
 Unclaimed minimum offer: `$5.00`
@@ -148,9 +150,10 @@ beta origin. The active origin is
   REST credentials, and `NEXT_PUBLIC_APP_URL`.
 - The Dodo Test Mode webhook endpoint is
   `https://priced.pricedapp.workers.dev/api/webhooks/payments`.
-- Supabase Site URL and the `/auth/callback` redirect allowlist still need to
-  be updated to this Cloudflare origin. Their previous settings point to the
-  retired hostname, so Google Auth on the new origin is not verified yet.
+- Supabase Site URL is `https://priced.pricedapp.workers.dev`; its `/auth/callback`
+  redirect is allowlisted. Existing-account Google sign-in, callback, sign-out,
+  and re-sign-in were verified on this origin on 2026-10-06. Fresh-account
+  welcome/handle creation and external magic-link delivery remain unverified.
 - `NEXT_PUBLIC_*` values are INLINED at `cf:build` time. Export them in the
   build environment before building; Worker runtime secrets never reach the
   browser. `cf:deploy` uploads the last build output and does not rebuild. See

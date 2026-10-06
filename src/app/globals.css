@@ -405,6 +405,33 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   overflow-wrap: anywhere;
 }
 
+.age-dialog {
+  width: min(520px, calc(100% - 32px));
+  max-width: none;
+  border: 2px solid var(--rule);
+  background: var(--paper-raised);
+  color: var(--ink);
+  padding: var(--space-5);
+  box-shadow: 8px 8px 0 var(--ink);
+}
+.age-dialog::backdrop { background: rgba(22, 21, 15, 0.68); }
+.age-dialog > .stack { gap: var(--space-4); }
+.age-confirmation-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  font-size: 15px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.age-confirmation-check input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--money);
+}
+
 /* Keyboard focus visibility (§18): never removed, only made consistent. */
 a:focus-visible,
 button:focus-visible,

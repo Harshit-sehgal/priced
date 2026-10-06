@@ -102,6 +102,11 @@ the deployed Worker.
 - Updated public copy and README to describe Priced as a paid ranking/listing
   platform and remove leftover statements that called prices or sharing a
   “game.” This is product-copy accuracy, not a legal classification.
+- Added an 18+ confirmation popup before paid checkout. The server issues a
+  five-minute signed, quote-bound cookie after validating the buyer and quote;
+  `/api/checkout` rejects real authenticated checkout requests without it.
+  This is self-attestation, not independent age verification; Priced collects
+  no date of birth or identity document for the gate. Verification is pending.
 - Current branch checks: `npm test` (279 tests, 272 pass, 0 fail, 7 expected
   real-Postgres skips), typecheck, lint, production build, and browser suite
   (119 pass, 1 existing skip). The active Cloudflare beta smoke passed 11/11.
@@ -130,8 +135,11 @@ the deployed Worker.
   but full `npm audit` reports five high-severity paths from the single,
   currently unpatched dev-only `braces@3.0.3` advisory documented above.
 - Real-money launch remains blocked on written Indian legal review, including
-  buyer age/capacity, upcoming DPDP child-data consent/tracking requirements,
-  and the paid ranking's statutory classification; legal seller/operator and
+  whether the self-attestation is sufficient for buyer age/capacity and
+  upcoming DPDP child-data consent/tracking requirements,
+  the paid ranking's statutory classification under the PROG Act and 2026
+  Rules (effective 2026-05-01), and the E-Commerce amendments effective
+  2027-01-01; legal seller/operator and
   grievance disclosures; backup and alert secrets; fresh-account auth-flow
   verification; deployment of the reviewed public copy; and cleanup/review of
   sandbox records. Dodo remains in Test Mode.

@@ -34,9 +34,19 @@ function loadTurnstileScript(): Promise<TurnstileApi | null> {
 export function CheckoutButton({ quoteId }: { quoteId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adultConfirmed, setAdultConfirmed] = useState(false);
+  const [ageDialogOpen, setAgeDialogOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const widgetRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
   const tokenRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (ageDialogOpen && !dialog.open) dialog.showModal();
+    if (!ageDialogOpen && dialog.open) dialog.close();
+  }, [ageDialogOpen]);
 
   // Render the invisible widget when Turnstile is configured.
   useEffect(() => {
@@ -69,9 +79,25 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
   }, []);
 
   async function checkout() {
+    if (!adultConfirmed) return;
     setBusy(true);
     setError(null);
     try {
+      const ageRes = await fetch("/api/age-confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ quoteId, adultConfirmed: true }),
+      });
+      const ageBody = await ageRes.json().catch(() => ({}));
+      if (!ageRes.ok) {
+        const message = ageBody.error === "login_required"
+          ? "Sign in again before paying."
+          : ageBody.error === "age_confirmation_unavailable"
+            ? "Age confirmation is unavailable. Please try again later."
+            : ageBody.error ?? `age confirmation failed (${ageRes.status})`;
+        throw new Error(message);
+      }
+
       let token: string | null = tokenRef.current;
       if (TURNSTILE_SITE_KEY) {
         const ts = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
@@ -129,10 +155,65 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
   return (
     <div className="stack" style={{ gap: "var(--space-2)" }}>
       {TURNSTILE_SITE_KEY ? <div ref={widgetRef} aria-hidden="true" /> : null}
-      <button className="btn btn-take btn-block" onClick={checkout} disabled={busy}>
+      <button
+        className="btn btn-take btn-block"
+        onClick={() => {
+          setError(null);
+          setAdultConfirmed(false);
+          setAgeDialogOpen(true);
+        }}
+        disabled={busy}
+      >
         {busy ? "Opening checkout…" : "Continue to payment"}
       </button>
-      {error ? <p className="field-error small" style={{ margin: 0 }}>{error}</p> : null}
+      <dialog
+        ref={dialogRef}
+        className="age-dialog"
+        aria-labelledby="age-confirmation-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!busy) setAgeDialogOpen(false);
+        }}
+        onClose={() => setAgeDialogOpen(false)}
+      >
+        <div className="stack">
+          <h2 id="age-confirmation-title" className="display" style={{ fontSize: 24, margin: 0 }}>
+            Before you continue
+          </h2>
+          <p className="muted" style={{ margin: 0 }}>
+            Only people 18 or older may make paid offers on Priced.
+          </p>
+          <label className="age-confirmation-check">
+            <input
+              type="checkbox"
+              checked={adultConfirmed}
+              onChange={(event) => setAdultConfirmed(event.target.checked)}
+              disabled={busy}
+            />
+            <span>I confirm I am 18 or older.</span>
+          </label>
+          {error ? <p className="field-error small" role="alert" style={{ margin: 0 }}>{error}</p> : null}
+          <div className="row-split">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => setAgeDialogOpen(false)}
+              disabled={busy}
+            >
+              Not now
+            </button>
+            <button
+              type="button"
+              className="btn btn-take"
+              onClick={checkout}
+              disabled={!adultConfirmed || busy}
+            >
+              {busy ? "Opening checkout…" : "Confirm and continue"}
+            </button>
+          </div>
+        </div>
+      </dialog>
+      {error && !ageDialogOpen ? <p className="field-error small" role="alert" style={{ margin: 0 }}>{error}</p> : null}
     </div>
   );
 }

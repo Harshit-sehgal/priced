@@ -1,4 +1,4 @@
-import { APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
  * Demo-mode helper: the demo buyer needs a public handle before quoting.
@@ -17,6 +17,13 @@ export async function handleFor(request: APIRequestContext): Promise<void> {
   if (res.ok() || res.status() === 429) return;
   const detail = await res.text().catch(() => "");
   throw new Error(`handle setup failed: ${res.status()} ${detail.slice(0, 120)}`);
+}
+
+export async function confirmAdultAndContinue(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Continue to payment" }).click();
+  await expect(page.getByRole("dialog", { name: "Before you continue" })).toBeVisible();
+  await page.getByRole("checkbox", { name: "I confirm I am 18 or older." }).check();
+  await page.getByRole("button", { name: "Confirm and continue" }).click();
 }
 
 /**

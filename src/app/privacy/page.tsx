@@ -71,9 +71,12 @@ export default function PrivacyPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>Cookies and connections</h2>
       <p>
-        First-party cookies for your login session, and a websocket connection so the market updates
-        live while you watch it. <strong>No advertising cookies, no third-party trackers, no
-        analytics vendor.</strong> The analytics above are first-party and stay in our own database.
+        First-party cookies keep your login session. If you start checkout, a quote-specific,
+        HttpOnly cookie records your 18+ confirmation and expires within five minutes. We do not
+        collect your date of birth or an identity document for this confirmation. A websocket keeps
+        the market live while you watch it. <strong>No advertising cookies, no third-party trackers,
+        no analytics vendor.</strong> The analytics above are first-party and stay in our own
+        database.
       </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>How long we keep things</h2>
