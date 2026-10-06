@@ -113,14 +113,28 @@ the deployed Worker.
   `micromatch` chain; `npm audit --omit=dev` reports zero vulnerabilities. Do
   not use `npm audit fix --force`: npm proposes downgrading the Next lint config
   to 14.2.35. Recheck for an upstream fix before a later release.
-- PR #83 is still a draft and these changes are not deployed. Supabase Auth on
-  the Cloudflare origin remains Owner blocked pending the URL/redirect update
-  and a real Google sign-in. The Dodo Test Mode matrix is still partial.
+- PR #83 is still a draft and its code/copy changes are not deployed. On
+  2026-10-06, the existing Supabase project was updated to use
+  `https://priced.pricedapp.workers.dev` as its Site URL and
+  `https://priced.pricedapp.workers.dev/auth/callback` was added to the
+  redirect allowlist; the Vercel rollback callback was retained. Google OAuth
+  completed on the active Cloudflare origin, and sign-out followed by a second
+  Google sign-in also completed. This verifies the existing `@harshit` account
+  only; a fresh-account welcome/handle-creation path was not exercised.
+- Live-page inspection found the active Worker is still serving the earlier
+  deployment: it publicly calls prices “a game” and shows sandbox/test takeover
+  records, including Dodo test-domain names. The PR copy corrections have not
+  reached the active origin, and those visible test records need owner review
+  before inviting beta users. No hosted data was deleted.
+- The Dodo Test Mode matrix is still partial. `npm audit --omit=dev` is clean,
+  but full `npm audit` reports five high-severity paths from the single,
+  currently unpatched dev-only `braces@3.0.3` advisory documented above.
 - Real-money launch remains blocked on written Indian legal review, including
   buyer age/capacity, upcoming DPDP child-data consent/tracking requirements,
   and the paid ranking's statutory classification; legal seller/operator and
-  grievance disclosures; backup and alert secrets; and active-origin Auth
-  verification. Dodo remains in Test Mode.
+  grievance disclosures; backup and alert secrets; fresh-account auth-flow
+  verification; deployment of the reviewed public copy; and cleanup/review of
+  sandbox records. Dodo remains in Test Mode.
 
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 
