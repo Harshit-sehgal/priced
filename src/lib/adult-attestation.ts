@@ -1,8 +1,14 @@
 export const ADULT_ATTESTATION_COOKIE = "priced_adult_attestation";
 export const ADULT_ATTESTATION_TTL_MS = 5 * 60_000;
 
-function payload(userId: string, quoteId: string, issuedAt: number): Uint8Array {
-  return new TextEncoder().encode(`${userId}\n${quoteId}\n${issuedAt}`);
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
+
+function payload(userId: string, quoteId: string, issuedAt: number): ArrayBuffer {
+  return toArrayBuffer(new TextEncoder().encode(`${userId}\n${quoteId}\n${issuedAt}`));
 }
 
 async function key(secret: string): Promise<CryptoKey> {
@@ -19,9 +25,13 @@ function toHex(bytes: ArrayBuffer): string {
   return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function fromHex(value: string): Uint8Array | null {
+function fromHex(value: string): ArrayBuffer | null {
   if (!/^[\da-f]{64}$/i.test(value)) return null;
-  return Uint8Array.from({ length: 32 }, (_, index) => Number.parseInt(value.slice(index * 2, index * 2 + 2), 16));
+  const bytes = new Uint8Array(new ArrayBuffer(32));
+  for (let index = 0; index < bytes.length; index++) {
+    bytes[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes.buffer;
 }
 
 export async function createAdultAttestationToken(
