@@ -66,7 +66,7 @@ export function ShareButtons({ domain, priceCents, handle, saleId }: { domain: s
         </button>
       </div>
       <p className="small muted" style={{ margin: 0 }}>
-        Sharing is the whole game: your post is how challengers find you. @{handle} ·{" "}
+        Sharing helps new challengers find you. @{handle} ·{" "}
         {money(priceCents)}
       </p>
       {copyError ? <p className="field-error small" style={{ margin: 0 }}>{copyError}</p> : null}

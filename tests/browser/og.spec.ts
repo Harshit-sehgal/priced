@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { handleFor, uniqueDomain } from "./helpers";
+import { confirmAdultAndContinue, handleFor, uniqueDomain } from "./helpers";
 
 /**
  * OG card smoke tests (launch item 13, in-repo half). next/og rendering only
@@ -27,7 +27,7 @@ test.describe("OG cards", () => {
     await handleFor(request);
     await page.goto(`/domain/${domain}`);
     await page.getByRole("button", { name: "Continue with this offer" }).click();
-    await page.getByRole("button", { name: "Continue to payment" }).click();
+    await confirmAdultAndContinue(page);
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
     const saleId = page.url().match(/\/success\/([^/?#]+)/)?.[1];

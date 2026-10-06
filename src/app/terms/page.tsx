@@ -19,10 +19,12 @@ export default function TermsPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>1. What you are buying</h2>
       <p>
-        Priced is a public game. Paying an accepted offer buys{" "}
-        <strong>temporary symbolic holder status</strong> on a domain&apos;s price tag as displayed
-        on this website, and a permanent line in this website&apos;s history. It lasts until
-        somebody else makes a higher accepted offer. That is the entire product.{" "}
+        Priced is a paid ranking and listing platform. Paying an accepted offer buys{" "}
+        <strong>a temporary symbolic display position</strong> on a domain&apos;s price tag and a
+        permanent line in this website&apos;s history. The position lasts until somebody else makes a
+        higher accepted offer. Payments buy the platform&apos;s display service; they are not paid to
+        the current holder, and holder status cannot be redeemed for money. That is the entire
+        product.{" "}
         <Link href="/about">Longer explanation here</Link>.
       </p>
 
@@ -64,6 +66,10 @@ export default function TermsPage() {
         public forever. Handles that impersonate staff, the site itself, or any person or brand are
         refused or removed. One person, one account; do not share or sell accounts.
       </p>
+      <p>
+        You must be 18 or older to make a paid offer. Before checkout, you must confirm that you
+        meet this requirement. Do not pay if you are under 18.
+      </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>6. Your profile link</h2>
       <p>
@@ -73,7 +79,7 @@ export default function TermsPage() {
         do not endorse anything a holder links to.
       </p>
 
-      <h2 className="display" style={{ fontSize: 18 }}>7. Tags we keep out of the game</h2>
+      <h2 className="display" style={{ fontSize: 18 }}>7. Tags we keep off the list</h2>
       <p>
         Some domains are blocked because a tag on them could be used to mislead — banks, crypto
         wallets, government and similar. We may add to that list at any time, including after a tag
@@ -92,9 +98,8 @@ export default function TermsPage() {
       <h2 className="display" style={{ fontSize: 18 }}>9. Takedowns and complaints</h2>
       <p>
         If you operate a domain and want its tag removed, or a handle or link is impersonating you,
-        say so and we will act on it. During the beta the channel is the repository issue tracker; a
-        proper contact address is published before real-money launch.{" "}
-        <strong>Never post payment details or private billing information in a public issue.</strong>
+        email <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Do not
+        email payment credentials or full card details.
       </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>10. Availability</h2>
@@ -110,13 +115,14 @@ export default function TermsPage() {
       <p>
         These are plain-language working terms, not a finished legal agreement, and they have not
         been reviewed by a lawyer. Before real money is accepted, they are replaced by documents
-        reviewed under the operating jurisdiction, naming the operating entity, the governing law,
-        the dispute-resolution process, and a real support address. Until then the beta runs on test
-        payments. Nothing here limits consumer rights you have by law.
+        reviewed under the operating jurisdiction, naming the operating entity and address, the
+        grievance contact, governing law, and dispute-resolution process. Until then the beta runs
+        on test payments. Nothing here limits consumer rights you have by law.
       </p>
 
       <p className="small muted">
-        Last updated with the beta. Contact: repository issue tracker. See also{" "}
+        Last updated with the beta. Contact:{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. See also{" "}
         <Link href="/privacy">Privacy</Link> and <Link href="/refunds">Refunds</Link>.
       </p>
     </article>

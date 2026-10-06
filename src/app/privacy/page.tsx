@@ -45,9 +45,11 @@ export default function PrivacyPage() {
         </li>
         <li>
           <strong>Product analytics.</strong> Which pages and tags were opened, the domain or handle
-          involved, and a random per-tab session id kept in your browser&apos;s{" "}
-          <span className="mono">sessionStorage</span>. It is not tied to your identity and it
-          disappears when you close the tab.
+          involved, and event details. Some server-side events for signed-in users include an
+          internal account id and chosen handle. Browser events may include a random per-tab
+          session id kept in your browser&apos;s <span className="mono">sessionStorage</span>. Signed-in
+          analytics can be associated with your account; the per-tab session id disappears from
+          your browser when you close the tab.
         </li>
       </ul>
 
@@ -61,16 +63,20 @@ export default function PrivacyPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>Your IP address</h2>
       <p>
-        Used transiently to rate-limit abuse, and <strong>never written to the database</strong>. It
-        lives only as a short-lived counter key that expires within minutes. We do not log IP
-        addresses against your account or your activity.
+        Priced uses your IP address transiently to rate-limit abuse and does not store it in the
+        application database. Cloudflare and other infrastructure providers may process connection
+        data under their own service terms and privacy documents, with retention periods that may
+        differ from Priced&apos;s.
       </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>Cookies and connections</h2>
       <p>
-        First-party cookies for your login session, and a websocket connection so the market updates
-        live while you watch it. <strong>No advertising cookies, no third-party trackers, no
-        analytics vendor.</strong> The analytics above are first-party and stay in our own database.
+        First-party cookies keep your login session. If you start checkout, a quote-specific,
+        HttpOnly cookie records your 18+ confirmation and expires within five minutes. We do not
+        collect your date of birth or an identity document for this confirmation. A websocket keeps
+        the market live while you watch it. <strong>No advertising cookies, no third-party trackers,
+        no analytics vendor.</strong> The analytics above are first-party and stay in our own
+        database.
       </p>
 
       <h2 className="display" style={{ fontSize: 18 }}>How long we keep things</h2>
@@ -98,9 +104,9 @@ export default function PrivacyPage() {
         is processed outside it.
       </p>
       <p className="small muted" style={{ margin: 0 }}>
-        During the beta the contact for any privacy request is the repository issue tracker; a real
-        address is published before real-money launch.{" "}
-        <strong>Never post payment details in a public issue.</strong>
+        For privacy requests, email{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Do not email
+        card numbers or payment credentials.
       </p>
 
       <p className="small muted">

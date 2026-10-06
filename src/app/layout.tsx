@@ -31,7 +31,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <p className="small muted" style={{ margin: 0 }}>
               Every tag on this site is a symbolic status marker. Holders do not acquire the real
               domain, website, company, trademark, DNS control, or any right to represent the
-              underlying entity. Prices are a game. <strong>Not the actual domain.</strong>
+              underlying entity. Prices reflect accepted offers. <strong>Not the actual domain.</strong>
             </p>
             <nav className="footer-links small mono" aria-label="Legal">
               <a href="/about">What this is</a>

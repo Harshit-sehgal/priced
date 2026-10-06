@@ -52,8 +52,8 @@ export default function RefundsPage() {
       <h2 className="display" style={{ fontSize: 18 }}>A completed takeover is not refundable</h2>
       <p>
         Once the tag is yours, the payment is final. It is <strong>not</strong> refundable because
-        somebody later took the tag from you — that is the entire game, it was always going to
-        happen, and it is stated everywhere on this site before you pay. You bought temporary holder
+        somebody later took the tag from you — a higher accepted offer replaces your display
+        position, and this is stated everywhere on this site before you pay. You bought temporary holder
         status and the duration was never guaranteed. The one exception is above: if the operator
         reserves the tag for safety, the last payment is refunded.
       </p>
@@ -88,12 +88,9 @@ export default function RefundsPage() {
 
       <h2 className="display" style={{ fontSize: 18 }}>Getting in touch</h2>
       <p>
-        During the beta, the channel is the repository issue tracker. A private billing-support
-        address is published before real-money payments are enabled.{" "}
-        <strong>
-          Never post card details, full provider references, or other private billing information in
-          a public issue.
-        </strong>
+        For billing support, email{" "}
+        <a href="mailto:social.official.me@gmail.com">social.official.me@gmail.com</a>. Never send
+        card numbers or payment credentials by email.
       </p>
 
       <p className="small muted">

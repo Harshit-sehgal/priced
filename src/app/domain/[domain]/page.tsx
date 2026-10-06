@@ -241,9 +241,9 @@ export default async function DomainPage({ params }: Params) {
       </section>
 
       <section className="notice">
-        <strong>What is this?</strong> A public game. Paying makes this website show your handle on
-        {` ${canonical}'s`} price tag until someone pays more. You are not buying the domain,
-        the website, or anything it represents.
+        <strong>What is this?</strong> A paid ranking platform. Paying an accepted offer makes this
+        website show your handle on{` ${canonical}'s`} price tag until someone pays a higher offer.
+        You are not buying the domain, the website, or anything it represents.
       </section>
     </div>
   );

@@ -102,7 +102,7 @@ export default async function Home() {
       <section className="notice">
         <strong>What am I buying?</strong> The right for this website to publicly show your handle
         on a domain&apos;s price tag until somebody pays more and takes it. No domain registration,
-        no DNS, no equity, no affiliation. Previous holders get nothing. That&apos;s the game.
+        no DNS, no equity, no affiliation. Previous holders get nothing. That&apos;s how the list works.
       </section>
     </div>
   );

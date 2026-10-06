@@ -97,6 +97,53 @@ Playwright suite (119 pass, 1 intentional skip), `npm run build`,
 vulnerabilities). The staging smoke and OG checks above were then re-run against
 the deployed Worker.
 
+## Launch-readiness pass — 2026-10-06
+
+- Updated public copy and README to describe Priced as a paid ranking/listing
+  platform and remove leftover statements that called prices or sharing a
+  “game.” This is product-copy accuracy, not a legal classification.
+- Added an 18+ confirmation popup before paid checkout. The server issues a
+  five-minute signed, quote-bound cookie after validating the buyer and quote;
+  `/api/checkout` rejects real authenticated checkout requests without it.
+  This is self-attestation, not independent age verification; Priced collects
+  no date of birth or identity document for the gate. Verification is pending.
+- Current branch checks: `npm test` (279 tests, 272 pass, 0 fail, 7 expected
+  real-Postgres skips), typecheck, lint, production build, and browser suite
+  (119 pass, 1 existing skip). The active Cloudflare beta smoke passed 11/11.
+- The fresh full `npm audit` now reports five high-severity package findings
+  caused by one GitHub-reviewed advisory, CVE-2026-93687 / GHSA-vfj7-8cjw-p6xm,
+  for `braces@3.0.3` (stack exhaustion on deeply nested brace patterns). The
+  advisory currently lists no patched release. The dependency is reachable
+  only through the development-time `eslint-config-next` → `fast-glob` →
+  `micromatch` chain; `npm audit --omit=dev` reports zero vulnerabilities. Do
+  not use `npm audit fix --force`: npm proposes downgrading the Next lint config
+  to 14.2.35. Recheck for an upstream fix before a later release.
+- PR #83 is still a draft and its code/copy changes are not deployed. On
+  2026-10-06, the existing Supabase project was updated to use
+  `https://priced.pricedapp.workers.dev` as its Site URL and
+  `https://priced.pricedapp.workers.dev/auth/callback` was added to the
+  redirect allowlist; the Vercel rollback callback was retained. Google OAuth
+  completed on the active Cloudflare origin, and sign-out followed by a second
+  Google sign-in also completed. This verifies the existing `@harshit` account
+  only; a fresh-account welcome/handle-creation path was not exercised.
+- Live-page inspection found the active Worker is still serving the earlier
+  deployment: it publicly calls prices “a game” and shows sandbox/test takeover
+  records, including Dodo test-domain names. The PR copy corrections have not
+  reached the active origin, and those visible test records need owner review
+  before inviting beta users. No hosted data was deleted.
+- The Dodo Test Mode matrix is still partial. `npm audit --omit=dev` is clean,
+  but full `npm audit` reports five high-severity paths from the single,
+  currently unpatched dev-only `braces@3.0.3` advisory documented above.
+- Real-money launch remains blocked on written Indian legal review, including
+  whether the self-attestation is sufficient for buyer age/capacity and
+  upcoming DPDP child-data consent/tracking requirements,
+  the paid ranking's statutory classification under the PROG Act and 2026
+  Rules (effective 2026-05-01), and the E-Commerce amendments effective
+  2027-01-01; legal seller/operator and
+  grievance disclosures; backup and alert secrets; fresh-account auth-flow
+  verification; deployment of the reviewed public copy; and cleanup/review of
+  sandbox records. Dodo remains in Test Mode.
+
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 
 The designated free-tier beta origin at that time was Cloudflare Workers:

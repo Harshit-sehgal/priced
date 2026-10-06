@@ -90,7 +90,7 @@ export function overFetch(limit: number): number {
  * Drop rows whose domain is reserved, then trim to the requested limit.
  *
  * WHY every discovery surface needs this: the blocklist exists to keep
- * impersonation-dangerous tags out of the game, and the Terms say a domain may
+ * impersonation-dangerous tags off the public list, and the Terms say a domain may
  * be reserved AFTER it is already held. Before this, only the sitemap and
  * "Most Fought Over" honoured it — so reserving a dangerous tag left it still
  * promoted on the homepage table, in Fastest Rising, in Newly Claimed and in

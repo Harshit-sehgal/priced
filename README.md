@@ -4,7 +4,7 @@
 
 **How much is the internet worth?**
 
-Priced is a competitive internet game where people pay to become the current **symbolic holder** of familiar domain names such as `google.com`, `openai.com`, `apple.com`, a friend's site, a competitor, or their own startup.
+Priced is a paid ranking and listing platform where people place offers for a temporary **symbolic display position** on familiar domain tags such as `google.com`, `openai.com`, `apple.com`, a friend's site, a competitor, or their own startup.
 
 Nobody receives the real domain, website, company, trademark, IP, equity, DNS control, or legal ownership. A purchase changes only the public price tag and holder shown inside Priced.
 
@@ -53,9 +53,9 @@ integration, dockerized real-Postgres RPC races, browser (desktop + mobile +
 
 **Current hosted state:** the Priced Supabase project exists in `ap-south-1`; canonical migrations through the 2026-09-13 hardening wave (finalize NULL guards, read-path indexes, operator moderation toolkit) are applied and privilege-verified; required Realtime tables are enabled; privileged RPCs are service-role only. Dodo Payments product verification/approval is confirmed by the owner. The active free beta runs on Cloudflare Workers at `https://priced.pricedapp.workers.dev`; the renamed Vercel project (`https://internet-price-tag.vercel.app`) is retained as a rollback/reference deployment only.
 
-**Current beta status:** Supabase Auth (Google OAuth), Dodo Test Mode checkout + signed webhooks, free Upstash Redis rate limits, Realtime, holder analytics, share flow, and the hosted success journey are verified on the Cloudflare beta; the 10-check staging smoke, health/db/redis/origin probes, and a scheduled GitHub Actions health workflow are green. Remaining: complete Dodo Test Mode refund closure for the hosted 10/25-way payment race (blocked on the provider sandbox wallet balance), then the real-money launch gates. See [AGENTS.md](./AGENTS.md) and [INTEGRATION_NOW.md](./INTEGRATION_NOW.md).
+**Current beta status:** the active Cloudflare Worker has healthy Supabase/Redis connections, signed Dodo Test Mode webhook handling, and the 11-check hosted smoke passes. On 2026-10-06, Google OAuth sign-in, sign-out, and re-login were verified on `https://priced.pricedapp.workers.dev`; fresh-account welcome/handle creation has not been checked there. The clean hosted 25-payment race is staging-verified: one takeover finalized and the 24 stale payments were refunded. The active Worker still serves the earlier public copy and visible sandbox/test takeover records; PR #83 contains copy corrections but is not deployed. Remaining sandbox cases are tracked in [LAUNCH_CHECKLIST.md](./LAUNCH_CHECKLIST.md); Live payments remain disabled. See [AGENTS.md](./AGENTS.md) and [INTEGRATION_NOW.md](./INTEGRATION_NOW.md).
 
-**Before real-money public launch:** review production hosting plan compliance, disaster recovery/logical backups, legal/support readiness, environment isolation, live Dodo credentials, and the closed-beta results.
+**Before any real-money beta or public launch:** verify fresh-account registration/handle creation and an email login on the active origin; finish the remaining Test Mode matrix; configure monitoring and daily backup secrets; review the visible sandbox records; and obtain Indian counsel's written review of buyer age/capacity, statutory classification, operator disclosures, tax, privacy, and the e-commerce amendments effective 1 January 2027. The current legal pages are working drafts, not lawyer-reviewed documents.
 
 The reusable foundation is:
 
@@ -108,4 +108,4 @@ The app runs with no credentials in demo mode using an in-memory market and simu
 
 V1 eligibility is explicit: `ALLOWED_SUFFIXES` in `src/lib/domains.ts` is the launch allowlist; IDN/punycode (`xn--`) is rejected to avoid homograph/display risk (DEPLOY.md §10).
 
-The market is a game/status product, **not an investment or domain-ownership product**. Never describe a holder as owning the underlying domain without an immediate explicit disclaimer.
+The market sells a temporary display position, **not an investment or domain-ownership right**. Never describe a holder as owning the underlying domain without an immediate explicit disclaimer.

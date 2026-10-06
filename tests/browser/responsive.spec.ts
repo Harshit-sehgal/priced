@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { handleFor, uniqueDomain } from "./helpers";
+import { confirmAdultAndContinue, handleFor, uniqueDomain } from "./helpers";
 
 /**
  * Device/state coverage (launch item 11). The suite projects are Desktop
@@ -55,7 +55,7 @@ test.describe("375px phone", () => {
     await page.goto(`/domain/${domain}`);
     await page.getByRole("button", { name: "Continue with this offer" }).click();
     await expect(page).toHaveURL(/\/takeover\//);
-    await page.getByRole("button", { name: "Continue to payment" }).click();
+    await confirmAdultAndContinue(page);
     await expect(page).toHaveURL(/\/checkout\/mock/);
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
@@ -120,7 +120,7 @@ test.describe("long domain through the loop", () => {
     await handleFor(page.request);
     await page.goto(`/domain/${domain}`);
     await page.getByRole("button", { name: "Continue with this offer" }).click();
-    await page.getByRole("button", { name: "Continue to payment" }).click();
+    await confirmAdultAndContinue(page);
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
     await page.getByRole("link", { name: "Defend it · view the tag" }).click();
