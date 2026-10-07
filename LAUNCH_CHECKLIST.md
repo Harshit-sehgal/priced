@@ -14,10 +14,10 @@ Nothing is marked beyond the level actually evidenced.
 
 ## Current beta snapshot — 2026-10-08
 
-- Worker `priced` remains on version
-  `c0d9d09f-3573-47a6-a7d6-45d2cdf068bb`; read-only health checks and the
-  11-check staging smoke passed on 2026-10-08. The smoke created no checkout,
-  payment, or takeover.
+- Worker `priced` is on version
+  `d53578bf-3dd8-440d-a189-0bdbaacb729f`; Realtime CSP/WebSocket, read-only
+  health checks, and the 11-check staging smoke passed on 2026-10-08. The smoke
+  created no checkout, payment, or takeover.
 - PR #83 copy and age-gate changes are deployed. The age dialog was hosted-UI
   verified, but no age attestation or Dodo checkout was submitted.
 - Existing-account Google OAuth works on the active origin. Fresh-account

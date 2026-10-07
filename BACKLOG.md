@@ -32,11 +32,11 @@ quotes. That run was reconciled successfully, but it is not the result used to
 clear the strict timing gate.
 
 Latest hosted refresh (2026-10-08): the active Worker is on version
-`c0d9d09f-3573-47a6-a7d6-45d2cdf068bb`; health/readiness and the 11-check
-staging smoke passed. PR #83 copy is deployed. Historical Dodo/sandbox tags
-and sales remain visible for owner review. Fresh-account OAuth and the full
-Test Mode matrix on the age-gated build remain unverified. GitHub branch
-protection already requires `verify` and `Hosted beta smoke`.
+`d53578bf-3dd8-440d-a189-0bdbaacb729f`; Realtime CSP/WebSocket, health/readiness,
+and the 11-check staging smoke passed. PR #83 copy is deployed. Historical
+Dodo/sandbox tags and sales remain visible for owner review. Fresh-account
+OAuth and the full Test Mode matrix on the age-gated build remain unverified.
+GitHub branch protection already requires `verify` and `Hosted beta smoke`.
 
 ## Lane A — Owner-gated infra (do first, blocks all real-money verification)
 

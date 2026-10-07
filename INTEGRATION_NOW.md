@@ -235,9 +235,10 @@ Legal references checked for this status: [India Code Majority Act, 1875](https:
 
 ## Hosted status refresh — 2026-10-08
 
-- The active Worker remains on version
-  `c0d9d09f-3573-47a6-a7d6-45d2cdf068bb`, deployed after PR #83. Read-only
-  liveness, Supabase, Redis, and origin checks all returned healthy.
+- The active Worker is on version
+  `d53578bf-3dd8-440d-a189-0bdbaacb729f`, deployed from the PR #85
+  launch-readiness branch after PR #83. Read-only liveness, Supabase, Redis,
+  and origin checks all returned healthy.
 - `STAGING_URL=https://priced.pricedapp.workers.dev npm run smoke:staging`
   passed 11/11. The smoke emitted one `domain_opened` analytics event for its
   fixture and rejected the unsigned webhook with HTTP 400; it created no
