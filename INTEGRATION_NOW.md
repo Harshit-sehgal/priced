@@ -8,6 +8,19 @@ same-version 25-payment Dodo Test Mode race was completed on 2026-09-19 and is
 now **Staging verified**; earlier 2026-09-17/18 notes that call it blocked are
 historical evidence only.
 
+## Hosted Realtime CSP check (2026-10-08)
+
+The enforced CSP on the beta omitted `wss://*.supabase.co`, blocking the
+browser's Supabase Realtime socket. `next.config.mjs` now allows that specific
+WebSocket host. A clean Cloudflare build was deployed to Worker version
+`d53578bf-3dd8-440d-a189-0bdbaacb729f`; the hosted enforced and report-only
+headers both include the host, and a headless browser opened one Supabase
+Realtime WebSocket with zero CSP blocks. Liveness, Supabase, Redis, origin,
+and the 11-check staging smoke passed after deployment. This is **Staging
+verified** for the CSP/Realtime connection. It does not verify the age-gated
+checkout: an adult tester still needs to complete the current Test Mode
+payment matrix. Dodo remains in Test Mode.
+
 ## Active beta hostname migration (2026-09-30)
 
 The owner selected the available Cloudflare account namespace `pricedapp`;

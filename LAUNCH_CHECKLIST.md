@@ -183,6 +183,7 @@ staging smoke are green.
 | Open-redirect guards (callback, welcome, handle) | CI verified | `src/lib/navigation.ts`, `tests/integration/navigation.test.ts`, `tests/integration/cta.test.ts`; external, scheme-relative, encoded-separator, and dot-segment traversal cases are covered |
 | JSON-only CSRF guards on all money/identity routes | CI verified | health-analytics tests assert 415; routes enumerated in security review |
 | Security headers (HSTS, nosniff, DENY, referrer, permissions) and direct RPC denial | Staging verified | Production header check confirms HSTS, `nosniff`, `DENY`, strict referrer, and permissions headers; anonymous Supabase REST calls to `finalize_takeover` and `holder_analytics` both returned HTTP 401. |
+| Supabase Realtime CSP/WebSocket | Staging verified | Worker version `d53578bf-3dd8-440d-a189-0bdbaacb729f` serves enforced and report-only CSP headers allowing `wss://*.supabase.co`; hosted headless browser opened one Realtime socket with zero CSP blocks on 2026-10-08. |
 | Priced Credits OFF (no read/write path, no UI, no flag) | Verified by absence | `grep credit_ledger src/` → no request path; `grep PRICED_CREDITS src/` → no flag exists (docs/CREDITS.md marks it planned) |
 | Analytics privacy (PII strip, no raw webhook bodies, retention ENFORCEMENT) | Staging verified | Route tests plus the merged daily workflow; repository secrets are configured and manual run `34771269757` completed successfully against hosted Supabase (`0` expired rows deleted). DEPLOY.md §9, BACKLOG D5 |
 
