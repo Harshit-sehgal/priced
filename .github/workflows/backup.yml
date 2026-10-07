@@ -3,25 +3,27 @@ name: Logical backup
 # Daily logical backup of the hosted Priced database.
 #
 # Supabase's Free Plan provides NO managed backups, and PITR is deliberately
-# disabled during the free beta (DEPLOY.md §7), so the only durable copy of the
-# immutable sales ledger is one this repo takes itself. This workflow dumps the
-# database with pg_dump and uploads it as a build artifact.
+# disabled during the free beta (DEPLOY.md §7). This workflow can take a
+# logical dump, but raw database artifacts must only be stored in private
+# storage. This workflow currently uploads to GitHub Actions artifacts, so it
+# skips while this repository is public. Supporting encrypted external storage
+# requires a separate workflow implementation.
 #
-# It is a LOGICAL dump, not a substitute for the managed PITR that real-money
-# production still requires — it is the free-tier safety net until then.
+# It is a LOGICAL dump, not a substitute for managed PITR required before
+# real-money production. Once safely configured, it is a free-tier safety net.
 #
 # SETUP (owner): add repository secret
 #   SUPABASE_DB_URL   the Postgres connection string, e.g.
 #     postgresql://postgres.<ref>:<db-password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres
 #   (Project Settings → Database → Connection string → URI. Use the SESSION
 #    pooler or the direct connection so pg_dump can hold one session.)
-# The job SKIPS cleanly when the secret is absent.
+# The job skips when the secret is absent or the repository is public.
 #
 # The dump runs inside the `postgres:17` image rather than the runner's own
 # client: a NEWER client can dump an older server, but not vice versa, so this
 # covers both PG15 and PG17 Supabase projects deterministically.
 #
-# RESTORE: download the artifact and run
+# RESTORE: from an authorized private artifact, run
 #   pg_restore --clean --no-owner --no-privileges -d "$TARGET_DB" priced-<stamp>.dump
 # then verify domains vs sales and re-run `npm run test:concurrency`.
 
@@ -39,7 +41,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Check backup artifact visibility
+        id: destination
+        env:
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          if [ "${REPOSITORY_PRIVATE:-false}" != "true" ]; then
+            echo "::warning::Database backup skipped: this repository is public and Actions artifacts are available to repository readers."
+            echo "allowed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "allowed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Dump the hosted database with the postgres:17 client
+        if: steps.destination.outputs.allowed == 'true'
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
@@ -82,7 +97,7 @@ jobs:
           echo "dump ok: ${size} bytes; public.sales present"
 
       - name: Upload the backup artifact
-        if: env.stamp != ''
+        if: steps.destination.outputs.allowed == 'true' && env.stamp != ''
         uses: actions/upload-artifact@v4
         with:
           name: priced-logical-backup-${{ env.stamp }}

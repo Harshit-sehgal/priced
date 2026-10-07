@@ -231,10 +231,14 @@ Legal references checked for this status: [India Code Majority Act, 1875](https:
   checkout, payment, or takeover.
 - GitHub branch protection already requires both `verify` and
   `Hosted beta smoke`.
-- `SUPABASE_DB_URL` is absent from repository and environment secret lists, so
-  the daily logical-backup workflow is not yet running. `ALERT_WEBHOOK_URL` is
-  absent from the active Worker secrets, so real-time error forwarding is not
-  enabled. Existing ledger-alert and uptime workflows remain configured.
+- `SUPABASE_DB_URL` is absent from repository and environment secret lists.
+  The database-backup workflow also skips because this GitHub repository is
+  public; do not store a raw dump as a public Actions artifact. Six earlier
+  successful workflow runs produced no artifacts. Before enabling dumps, the
+  owner must make the repository private or implement an encrypted/private
+  destination. `ALERT_WEBHOOK_URL` is absent from the active Worker secrets,
+  so real-time error forwarding is not enabled. Existing ledger-alert and
+  uptime workflows remain configured.
 - The PR #83 public-copy changes are deployed. Historical Dodo/sandbox tags
   and sales remain visible in the market; preserve the ledger and have the
   owner decide how to label these records before inviting beta users.
