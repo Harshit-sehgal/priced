@@ -150,11 +150,34 @@ are explicitly cleared.
 
 ## 4. Sandbox payment gate (§76)
 
-On a preview deployment with Dodo **test** credentials, run and record results for:
-successful payment, failed payment, cancelled checkout, duplicate webhook
-delivery (replay the same event), stale quote (take the domain from another
-session before paying), simultaneous checkout from two sessions, refund of a
-stale payment. **No unexplained payment states are permitted.**
+On the designated hosted beta origin with Dodo **Test Mode** credentials, run
+and record results. Do not configure privileged credentials on ordinary PR
+previews. The current beta origin is `https://priced.pricedapp.workers.dev`.
+
+The newest Worker includes the 18+ checkout prompt. An adult tester must
+complete any flow that submits the self-attestation. Verify the prompt and the
+server gate before running the payment matrix:
+
+- Start from a valid quote. “Continue to payment” opens the age dialog, and
+  “Confirm and continue” stays disabled until the checkbox is selected.
+- “Not now” closes the dialog without opening Dodo checkout. Confirm no
+  attestation was issued.
+- Have the adult tester select the checkbox and continue. Confirm the
+  quote-bound attestation succeeds and opens Dodo Test Mode checkout. Complete
+  one successful payment and confirm a signed webhook creates exactly one
+  sale and consumes the quote.
+- Do not represent self-attestation as independent age verification. Never
+  use real card data in Test Mode.
+
+Then run and record results for successful payment, failed payment, cancelled
+checkout, duplicate webhook delivery, duplicate event id, stale quote after
+another challenger wins, wrong amount, missing application metadata,
+simultaneous challengers, automatic stale-payment refund, refund failure,
+provider outage, and webhook retry after a retryable error. Capture the quote,
+payment, event, sale, and refund outcomes for each case. Exactly one valid
+takeover may finalize for a market version; failed, cancelled, stale, or
+refunded payments must not create a sale. **No unexplained payment states are
+permitted.**
 
 Money-path hardening notes (deep-scan pass, 2026-09-12 — CI-verified; hosted
 verification status is recorded below):
@@ -203,6 +226,8 @@ stayed unchanged.
 
 - Read `terms`, `privacy`, `refunds` pages and have them reviewed by a
   professional (plan §49). Edit freely — they are plain text pages.
+- Send `LEGAL_REVIEW_BRIEF.md` with those pages to Indian counsel and request
+  written launch conditions.
 - Add any sensitive domains you want blocked to the `reserved_domains` table
   (see `db/ops.sql` for operator queries).
 
