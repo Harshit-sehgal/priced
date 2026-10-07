@@ -8,6 +8,19 @@ same-version 25-payment Dodo Test Mode race was completed on 2026-09-19 and is
 now **Staging verified**; earlier 2026-09-17/18 notes that call it blocked are
 historical evidence only.
 
+## Hosted Realtime CSP check (2026-10-08)
+
+The enforced CSP on the beta omitted `wss://*.supabase.co`, blocking the
+browser's Supabase Realtime socket. `next.config.mjs` now allows that specific
+WebSocket host. A clean Cloudflare build was deployed to Worker version
+`d53578bf-3dd8-440d-a189-0bdbaacb729f`; the hosted enforced and report-only
+headers both include the host, and a headless browser opened one Supabase
+Realtime WebSocket with zero CSP blocks. Liveness, Supabase, Redis, origin,
+and the 11-check staging smoke passed after deployment. This is **Staging
+verified** for the CSP/Realtime connection. It does not verify the age-gated
+checkout: an adult tester still needs to complete the current Test Mode
+payment matrix. Dodo remains in Test Mode.
+
 ## Active beta hostname migration (2026-09-30)
 
 The owner selected the available Cloudflare account namespace `pricedapp`;
@@ -190,7 +203,8 @@ remain open.
   transaction/consumer disclosures, seller/operator and grievance identity,
   refunds, tax invoicing, privacy/analytics, and the suitability of
   self-attestation. The owner wants no public personal name; resolve that with
-  counsel before taking live payments. The Majority Act sets majority at 18 for
+  counsel before taking live payments. Use `LEGAL_REVIEW_BRIEF.md` to request a
+  written opinion. The Majority Act sets majority at 18 for
   persons domiciled in India and the Contract Act ties capacity to majority,
   but that does not decide whether this product needs stronger age checks.
 - Counsel must assess whether the actual product is within the Promotion and
@@ -218,6 +232,35 @@ Legal references checked for this status: [India Code Majority Act, 1875](https:
 [MeitY Promotion and Regulation of Online Gaming Rules, 2026](https://www.meity.gov.in/static/uploads/2026/04/7e0b02d37fd07f81fa48578a9996aa85.pdf),
 [MeitY DPDP commencement notification](https://www.meity.gov.in/static/uploads/2025/11/c56ceae6c383460ca69577428d36828b.pdf), and
 [PIB E-Commerce amendment summary](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2308759&lang=1&reg=48).
+
+## Hosted status refresh — 2026-10-08
+
+- The active Worker is on version
+  `d53578bf-3dd8-440d-a189-0bdbaacb729f`, deployed from the PR #85
+  launch-readiness branch after PR #83. Read-only liveness, Supabase, Redis,
+  and origin checks all returned healthy.
+- `STAGING_URL=https://priced.pricedapp.workers.dev npm run smoke:staging`
+  passed 11/11. The smoke emitted one `domain_opened` analytics event for its
+  fixture and rejected the unsigned webhook with HTTP 400; it created no
+  checkout, payment, or takeover.
+- GitHub branch protection already requires both `verify` and
+  `Hosted beta smoke`.
+- `SUPABASE_DB_URL` is absent from repository and environment secret lists.
+  The database-backup workflow also skips because this GitHub repository is
+  public; do not store a raw dump as a public Actions artifact. Six earlier
+  successful workflow runs produced no artifacts. Before enabling dumps, the
+  owner must make the repository private or implement an encrypted/private
+  destination. `ALERT_WEBHOOK_URL` is absent from the active Worker secrets,
+  so real-time error forwarding is not enabled. Existing ledger-alert and
+  uptime workflows remain configured.
+- The PR #83 public-copy changes are deployed. Historical Dodo/sandbox tags
+  and sales remain visible in the market; preserve the ledger and have the
+  owner decide how to label these records before inviting beta users.
+- Fresh-account Google OAuth → welcome → handle creation remains unverified.
+  The deployed age dialog was opened and its unchecked state verified, but no
+  attestation or checkout was submitted. The full Test Mode matrix therefore
+  remains partial on the age-gated build. The earlier clean 25-way race stays
+  **Staging verified** for the version tested then.
 
 ## Previous beta hosting state (2026-09-12; superseded 2026-09-30)
 

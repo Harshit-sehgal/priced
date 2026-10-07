@@ -150,11 +150,34 @@ are explicitly cleared.
 
 ## 4. Sandbox payment gate (§76)
 
-On a preview deployment with Dodo **test** credentials, run and record results for:
-successful payment, failed payment, cancelled checkout, duplicate webhook
-delivery (replay the same event), stale quote (take the domain from another
-session before paying), simultaneous checkout from two sessions, refund of a
-stale payment. **No unexplained payment states are permitted.**
+On the designated hosted beta origin with Dodo **Test Mode** credentials, run
+and record results. Do not configure privileged credentials on ordinary PR
+previews. The current beta origin is `https://priced.pricedapp.workers.dev`.
+
+The newest Worker includes the 18+ checkout prompt. An adult tester must
+complete any flow that submits the self-attestation. Verify the prompt and the
+server gate before running the payment matrix:
+
+- Start from a valid quote. “Continue to payment” opens the age dialog, and
+  “Confirm and continue” stays disabled until the checkbox is selected.
+- “Not now” closes the dialog without opening Dodo checkout. Confirm no
+  attestation was issued.
+- Have the adult tester select the checkbox and continue. Confirm the
+  quote-bound attestation succeeds and opens Dodo Test Mode checkout. Complete
+  one successful payment and confirm a signed webhook creates exactly one
+  sale and consumes the quote.
+- Do not represent self-attestation as independent age verification. Never
+  use real card data in Test Mode.
+
+Then run and record results for successful payment, failed payment, cancelled
+checkout, duplicate webhook delivery, duplicate event id, stale quote after
+another challenger wins, wrong amount, missing application metadata,
+simultaneous challengers, automatic stale-payment refund, refund failure,
+provider outage, and webhook retry after a retryable error. Capture the quote,
+payment, event, sale, and refund outcomes for each case. Exactly one valid
+takeover may finalize for a market version; failed, cancelled, stale, or
+refunded payments must not create a sale. **No unexplained payment states are
+permitted.**
 
 Money-path hardening notes (deep-scan pass, 2026-09-12 — CI-verified; hosted
 verification status is recorded below):
@@ -203,6 +226,8 @@ stayed unchanged.
 
 - Read `terms`, `privacy`, `refunds` pages and have them reviewed by a
   professional (plan §49). Edit freely — they are plain text pages.
+- Send `LEGAL_REVIEW_BRIEF.md` with those pages to Indian counsel and request
+  written launch conditions.
 - Add any sensitive domains you want blocked to the `reserved_domains` table
   (see `db/ops.sql` for operator queries).
 
@@ -221,6 +246,7 @@ stayed unchanged.
 - **What is authoritative:** `sales` rows are the immutable ledger. `domains` can be rebuilt from sales; never rewrite sales to fix a bad state — append or operator-correct via `db/ops.sql` audit + reserved-domain/suspension actions. Reserving a tag that is currently held carries a refund obligation (Terms §7): refund the last funded payment in the provider dashboard first, then record the reservation with the refund reference in the audit detail — `db/ops.sql` has the query and the procedure.
 - **Restore procedure:** use Supabase's PITR restore to the last known-good timestamp, then verify `domains` vs `sales` consistency and that `finalize_takeover` still satisfies the in-memory race tests (`npm run test:concurrency`). Re-verify the webhook signing secret and `SUPABASE_SERVICE_ROLE_KEY` are unchanged after restore.
 - **Free-beta logical backup verification:** on 2026-09-11, the hosted public schema and data were dumped with the authenticated Supabase CLI and restored into an isolated PostgreSQL 17 container. The restore completed with 3 domains, 3 sales, 2 profiles, 97 analytics events, and 5 payment events. This is **Staging verified** evidence for the logical recovery procedure; it is not managed backup/PITR coverage. The Free Plan does not provide managed project backups, so keep PITR disabled during the free beta.
+- **Do not upload raw database dumps to this public repository.** GitHub Actions artifacts are downloadable by people with repository read access ([GitHub documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)); this repository is public. `.github/workflows/backup.yml` now skips while the repository is public, even if `SUPABASE_DB_URL` is later configured. Six earlier successful runs produced no artifacts. Before enabling automated dumps, either make the repository private or implement an encrypted/private destination, then configure the connection secret and verify a restore.
 
 ## 8. Monitoring (item 9)
 
