@@ -3,6 +3,7 @@ import Link from "next/link";
 import { money, quoteFor } from "@/lib/game.ts";
 import { getDomain, getDomainForDisplay, getProfileByHandle, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
 import { TakeoverCTA } from "@/components/TakeoverCTA";
+import { ShareButtons } from "@/components/ShareButtons";
 import { HistoryLedger } from "@/components/HistoryLedger";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { HolderCta } from "@/components/HolderCta";
@@ -76,7 +77,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   };
 }
 
-export default async function DomainPage({ params }: Params) {
+export default async function DomainPage({ params, searchParams }: Params & { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { domain } = await params;
   const { canonical, reason, row, sales } = await loadDomain(domain);
 
@@ -92,6 +93,18 @@ export default async function DomainPage({ params }: Params) {
 
   const unclaimed = !row || !row.holderUserId;
   const reserved = reason === "reserved";
+  if (!reserved && searchParams) {
+    const sp = await searchParams;
+    if (sp.via === "share" || sp.via === "x") {
+      await persistViewEvent({
+        event: "share_visit",
+        resource: `domain:${canonical}`,
+        domain: canonical,
+        handle: row?.holderHandle ?? null,
+        props: { via: String(sp.via) },
+      });
+    }
+  }
   // Holder analytics input: a claimed, non-reserved tag render counts as a
   // tag view (best-effort, never blocks render). persistViewEvent drops bot
   // traffic and collapses repeat (IP, domain) renders — including every
@@ -233,6 +246,17 @@ export default async function DomainPage({ params }: Params) {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="stack">
+        <h2 className="display display-section">Share this tag</h2>
+        <ShareButtons
+          domain={canonical}
+          priceCents={unclaimed ? quote.nextPriceCents : row?.priceCents ?? quote.nextPriceCents}
+          handle={row?.holderHandle ?? null}
+          unclaimed={unclaimed}
+          reserved={reserved}
+        />
       </section>
 
       <section className="section-rule stack">
