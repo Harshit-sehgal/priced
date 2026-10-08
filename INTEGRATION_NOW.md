@@ -12,7 +12,10 @@ same-version 25-payment Dodo Test Mode race was completed on 2026-09-19 and is
 now **Staging verified**; earlier 2026-09-17/18 notes that call it blocked are
 historical evidence only.
 
-## Live-mode configuration review — 2026-10-09
+## Initial Live-mode configuration review — 2026-10-09
+
+This read-only snapshot was taken before PR #90 merged and deployed. Its
+deployment and key-creation statements are superseded by the later section.
 
 The Dodo dashboard was switched to its Live view for inspection. Dodo shows
 “Live payments are active”; Product Information, Personal Information, and
@@ -99,6 +102,39 @@ disclosures, production hosting review, manual reservation-refund decision,
 and closed beta were recorded as Owner blocked at this snapshot. The owner
 retired these as repository release gates on 2026-10-09. See
 `LAUNCH_CHECKLIST.md` for factual status.
+
+## Post-merge deployment and Live cutover handoff — 2026-10-09
+
+PR #90 merged to `main` as `5b877e5` after required GitHub checks passed. It
+gates the share controls on the current holder's account. The merged build was
+deployed to Worker `priced` as version
+`ae0ccfaa-75c2-45d4-a124-be66a9f75b81`. Read-only checks returned liveness
+`ok`, Supabase `supabase`, Redis `ok`, and origin `ok`; `/`, `/login`, `/about`,
+`/terms`, `/privacy`, and `/refunds` returned HTTP 200. No checkout, payment,
+takeover, or analytics event was created during deployment verification.
+Share ownership is CI verified and deployed; hosted visibility for a signed-in
+holder and a non-holder was not independently rechecked.
+
+Dodo Live still reports payments active and the account/product approvals
+complete. The Live product is `pdt_0NnJBiDoKwxHCue0tPoZP`; its preview shows a
+one-time Pay What You Want price with a `$5.00` minimum. A restricted Live API
+key named `priced-cloudflare-live-20261009` was created with Checkout Sessions
+write and Refunds write scopes. The key has not been installed in Cloudflare;
+the owner must copy it directly from Dodo into the Worker secret field. No
+credential was sent through chat.
+
+The enabled Live webhook `ep_3J8wf8S8h51KeKjYCRWKiCoge3U` still targets the
+Vercel rollback URL and subscribes only to payment cancelled, failed, and
+succeeded events. It had no delivery attempts in the prior 24 hours. The
+Worker's Dodo secret values remain unreadable, so its current mode and
+credential/product alignment are unverified. The application reads one
+`DODO_PAYMENTS_MODE`, API key, product ID, and webhook signing key per Worker;
+Test and Live webhook signatures cannot both be verified by this Worker at the
+same time. For a Live cutover, install the matching Live API key and signing
+secret, set the Live mode and product ID, route the Live endpoint here with
+refund/dispute events enabled, and disable the Test endpoint for this Worker.
+The owner approved this cutover, but the credential handoff and provider/Worker
+configuration changes are still pending. No Live payment was submitted.
 
 ## Active beta hostname migration (2026-09-30)
 
