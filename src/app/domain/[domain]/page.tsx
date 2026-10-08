@@ -10,6 +10,7 @@ import { HolderCta } from "@/components/HolderCta";
 import { holderCtaVisible } from "@/lib/cta";
 import { persistViewEvent } from "@/lib/view-events";
 import { safeDecodeURIComponent } from "@/lib/navigation";
+import { demoViewer, getSessionUser, isAuthConfigured } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -131,9 +132,15 @@ export default async function DomainPage({ params, searchParams }: Params & { se
   // holding actually generates exposure for its holder). Suspension hides the
   // profile page, so holderCtaVisible() hides the profile's outbound CTA here
   // too. The handle itself stays visible: holdings are ledger truth.
-  const holderProfile = !unclaimed && row?.holderHandle
-    ? await getProfileByHandle(row.holderHandle).catch(() => null)
-    : null;
+  const [holderProfile, viewer] = await Promise.all([
+    !unclaimed && row?.holderHandle
+      ? getProfileByHandle(row.holderHandle).catch(() => null)
+      : Promise.resolve(null),
+    !unclaimed && !reserved
+      ? (isAuthConfigured ? getSessionUser().catch(() => null) : Promise.resolve(demoViewer().user))
+      : Promise.resolve(null),
+  ]);
+  const canShare = !!shareSaleId && viewer?.id === row?.holderUserId;
   const quote = quoteFor({
     domain: canonical,
     holder: row?.holderHandle ?? null,
@@ -258,17 +265,17 @@ export default async function DomainPage({ params, searchParams }: Params & { se
         )}
       </section>
 
-      <section className="stack">
-        <h2 className="display display-section">Share this tag</h2>
-        <ShareButtons
-          domain={canonical}
-          priceCents={unclaimed ? quote.nextPriceCents : row?.priceCents ?? quote.nextPriceCents}
-          handle={row?.holderHandle ?? null}
-          shareSaleId={shareSaleId}
-          unclaimed={unclaimed}
-          reserved={reserved}
-        />
-      </section>
+      {canShare ? (
+        <section className="stack">
+          <h2 className="display display-section">Share this tag</h2>
+          <ShareButtons
+            domain={canonical}
+            priceCents={row!.priceCents}
+            handle={row!.holderHandle}
+            shareSaleId={shareSaleId}
+          />
+        </section>
+      ) : null}
 
       <section className="section-rule stack">
         <h2 className="display display-section">Tag History</h2>

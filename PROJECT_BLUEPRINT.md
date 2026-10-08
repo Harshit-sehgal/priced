@@ -172,7 +172,7 @@ Before lookup:
 7. validate hostname syntax;
 8. safely canonicalize IDNs in production.
 
-V1 should trade registered public domains, not arbitrary URLs/paths. Decide before launch whether subdomains are eligible separately.
+V1 trades registered public domains, not arbitrary URLs or paths. Subdomains remain out of scope unless the owner chooses to add them later.
 
 Production needs an eligibility policy for government/military domains, education domains, private/localhost hosts, malicious/phishing destinations, internationalized domains, and domains that no longer resolve.
 
@@ -437,7 +437,7 @@ Do not prematurely build sophisticated fuzzy discovery. Real market activity wil
 
 ## 19. Abuse, fraud, moderation
 
-Before public real-money launch:
+Abuse and fraud controls:
 
 - rate-limit quote creation;
 - rate-limit checkout creation;
@@ -458,7 +458,9 @@ Potentially reserve the product's own domains and sensitive domains where repres
 
 ## 20. Legal/product language
 
-Before accepting real money, obtain appropriate legal review for the operating jurisdiction and target markets.
+The owner removed repository launch gates on 2026-10-09. The owner may seek
+legal review for the operating jurisdiction and target markets. This internal
+release policy does not change applicable legal obligations.
 
 Need at least:
 
@@ -597,12 +599,12 @@ Measure search → quote, quote → checkout, checkout → paid takeover, takeov
   bundle, otherwise the `/api/market/pulse` polling fallback (which is why the
   pulse route must never short-circuit on server-side env).
 
-### What still requires owner credentials or decisions
-- Real-money launch gates: legal review of the policy pages, live Dodo
-  credentials, production hosting plan compliance, disaster recovery, and the
-  closed beta (see `LAUNCH_CHECKLIST.md` / `BACKLOG.md` Lane D).
-- Dodo Test Mode wallet funds to close the hosted 10/25-way payment race
-  refunds.
+### Owner-selected follow-ups (non-gating)
+- Owner removed remaining real-money launch gates on 2026-10-09. Current
+  payment configuration and verification status remain recorded in
+  `LAUNCH_CHECKLIST.md`; gate removal does not mark unverified work complete.
+- Additional age-attested Test Mode payment coverage on the current build is
+  unverified; see `LAUNCH_CHECKLIST.md`.
 - A persistent error-alert destination (`SENTRY_DSN` or similar).
 - Cloudflare Turnstile keys (optional).
 
@@ -614,9 +616,10 @@ Measure search → quote, quote → checkout, checkout → paid takeover, takeov
   multi-instance rate limits, logical backup/restore, the 10-check smoke
   suite, and the hosted analytics/profile/share journey. See
   `INTEGRATION_NOW.md` for the evidence lines.
-- NOT yet verified: the full hosted payment race refund closure (provider
-  wallet blocked), OG cards in the X card validator, and anything else
-  `LAUNCH_CHECKLIST.md` still marks short.
+- Not verified on the current age-gated Worker: a real age-attested checkout
+  and the remaining Test Mode matrix. The historical 25-way hosted payment
+  race is Staging verified for the tested version. See `LAUNCH_CHECKLIST.md`.
+- OG cards in the X card validator remain an owner follow-up.
 
 ### Incomplete or intentionally deferred
 - Priced Credits: spec + ledger migration exist, feature flag OFF, no user

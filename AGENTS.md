@@ -107,7 +107,7 @@ Create or reuse the approved Single Payment product with Pay What You Want enabl
 Expected environment variables:
 
 - `DODO_PAYMENTS_API_KEY`
-- `DODO_PAYMENTS_MODE=test`
+- `DODO_PAYMENTS_MODE` (set per environment; the last recorded Worker used `test`)
 - `DODO_PAYMENTS_PRODUCT_ID`
 - `DODO_PAYMENTS_WEBHOOK_KEY`
 
@@ -127,7 +127,9 @@ Exactly one valid takeover may finalize for a given market version.
 
 Keep Stripe as an optional adapter only. Dodo remains the primary provider unless a new provider issue appears.
 
-Do not enable Dodo Live Mode until the hosted sandbox integration is green and the remaining real-money launch gates are reviewed.
+## Owner-directed release policy — 2026-10-09
+
+The owner removed the repository's remaining launch-gate requirements. Release timing is owner-controlled. This changes internal release policy only; applicable law, provider terms, and runtime payment safeguards remain. Keep verification claims factual: do not label unverified work `Staging verified` or `Production verified`. Keep Test and Live credentials, products, and webhooks environment-specific; never place Live credentials in ordinary Preview deployments.
 
 ## Active hosting state
 
@@ -160,7 +162,7 @@ beta origin. The active origin is
   browser. `cf:deploy` uploads the last build output and does not rebuild. See
   `DEPLOY.md §3`.
 - Do not expose Worker secrets in browser code or ordinary untrusted previews.
-- The free beta must remain in Dodo Test Mode; do not enable Live Mode.
+- The last recorded Worker configuration used Dodo Test Mode. See `LAUNCH_CHECKLIST.md` for dated evidence; this snapshot is not a mode lock.
 
 The existing Vercel project has been reused and renamed to `priced` in the owner's workspace. The project id is unchanged. Its historical production alias remains `https://internet-price-tag.vercel.app` and may be used for rollback, but Cloudflare is the designated beta origin above.
 
@@ -176,7 +178,7 @@ For sandbox and closed beta, use the stable Cloudflare Worker origin above. A pu
 
 Ordinary untrusted pull request previews should stay in demo mode and should not receive the Supabase service-role key, Dodo secrets, or other privileged credentials.
 
-Vercel Hobby can be used for non-commercial sandbox/testing, but real paid production hosting must be reviewed for plan compliance before accepting customer payments.
+The active Worker runs on Cloudflare. Vercel is rollback/reference only; `VERCEL_COMMERCIAL_GATE.md` records historical hosting context.
 
 ## Current Upstash strategy
 
@@ -207,7 +209,7 @@ Keep ordinary PR previews in demo mode with no privileged secrets.
 
 Do not enable Supabase PITR for the free beta phase.
 
-Before real-money production, revisit environment isolation and disaster recovery. A logical backup procedure using Supabase CLI `db dump` or `pg_dump` should be created and tested before relying on this database for customer money.
+Backup and recovery status is recorded in `DEPLOY.md §7` for operational reference. It is no longer a repository release gate.
 
 ## Expected environment variables
 
@@ -320,4 +322,4 @@ Agents should make reasonable reversible technical decisions without asking the 
 
 ## Completion definition
 
-The current phase is complete only when a real hosted beta environment successfully exercises Supabase, Google Auth, Dodo Test Mode, signed webhooks, Redis rate limits, Realtime, holder analytics, share flow, and takeover concurrency end to end with no unexplained payment state.
+The owner decides when to close a phase. Report the exact environments and flows verified; do not present unverified work as hosted or production verified.
