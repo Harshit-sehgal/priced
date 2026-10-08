@@ -33,10 +33,12 @@ clear the strict timing gate.
 
 Latest hosted refresh (2026-10-08): the active Worker is on version
 `d53578bf-3dd8-440d-a189-0bdbaacb729f`; Realtime CSP/WebSocket, health/readiness,
-and the 11-check staging smoke passed. PR #83 copy is deployed. Historical
-Dodo/sandbox tags and sales remain visible for owner review. Fresh-account
-OAuth and the full Test Mode matrix on the age-gated build remain unverified.
-GitHub branch protection already requires `verify` and `Hosted beta smoke`.
+and the 11-check staging smoke passed. PR #83 copy is deployed. The owner
+approved a hosted sandbox data reset: the public market is empty at `$0`, while
+the 11 Auth users/profiles remain. No protected backup was available, and
+Dodo-side Test Mode records were not changed. Fresh-account OAuth and the full
+Test Mode matrix on the age-gated build remain unverified. GitHub branch
+protection already requires `verify` and `Hosted beta smoke`.
 
 ## Lane A — Owner-gated infra (do first, blocks all real-money verification)
 
