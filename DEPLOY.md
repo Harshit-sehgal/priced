@@ -233,7 +233,17 @@ stayed unchanged.
 
 ## 6. Live configuration and rollout
 
-- Switch Dodo to live mode keys, update the webhook endpoint secret.
+- This Worker has one `DODO_PAYMENTS_MODE`, API key, product ID, and webhook
+  signing key. It cannot process Test and Live webhooks at the same time. Keep
+  ordinary previews demo-only; for a Live cutover, install the Live key and
+  matching Live webhook secret directly in the Worker, set `DODO_PAYMENTS_MODE`
+  to `live` and `DODO_PAYMENTS_PRODUCT_ID` to the approved Live product, then
+  point the enabled Live webhook to
+  `https://priced.pricedapp.workers.dev/api/webhooks/payments` and subscribe to
+  payment, refund, and dispute lifecycle events. Disable the Test webhook for
+  this Worker after cutover so its Test signature is not sent to a Live-only
+  verifier. Confirm Worker health and a signed provider event before describing
+  the Live integration as verified.
 - Keep Live credentials separate from Test credentials and Preview deployments.
 - Watch the Cloudflare live tail (`npx wrangler tail priced`) for the structured events from §56
   (`takeover_succeeded`, `payment_succeeded_takeover_stale`, `refund_failed`,

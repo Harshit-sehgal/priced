@@ -15,19 +15,21 @@ Nothing is marked beyond the level actually evidenced.
 The owner removed repository launch gates on 2026-10-09. Status entries
 record verification only; they are not release prerequisites. This does
 not change applicable law, provider terms, or payment safeguards. The
-2026-10-09 Live-mode review found Dodo's Live account and product approved,
-but the Live webhook still points to the Vercel rollback URL and the active
-Worker's Dodo mode/credentials could not be verified. See
+2026-10-09 Live cutover remains incomplete: the Live key and product are
+prepared, but the key and signing secret have not been installed in Cloudflare,
+and the Live webhook still points to the Vercel rollback URL. See
 `INTEGRATION_NOW.md` for evidence.
 
 ## Current beta snapshot — 2026-10-09
 
 - Worker `priced` is on version
-  `3c8948f2-5777-432c-950d-a1bf46951708`, deployed 2026-10-08 20:59 UTC.
-  Read-only liveness, database, and Redis checks returned healthy responses;
-  checked public routes returned HTTP 200. Realtime CSP/WebSocket and the
-  11-check staging smoke passed on earlier builds. No checkout, payment,
-  takeover, or analytics event was created during this review.
+  `ae0ccfaa-75c2-45d4-a124-be66a9f75b81`, deployed after PR #90 merged on
+  2026-10-09. Read-only liveness, database, Redis, and origin checks returned
+  healthy responses; `/`, `/login`, `/about`, `/terms`, `/privacy`, and
+  `/refunds` returned HTTP 200. No checkout, payment, takeover, or analytics
+  event was created during deployment verification.
+- PR #90's current-holder share gate is merged and deployed. It is CI verified;
+  hosted signed-in holder/non-holder visibility was not independently checked.
 - PR #83 copy and age-gate changes are deployed. The age dialog was hosted-UI
   verified, but no age attestation or Dodo checkout was submitted.
 - Existing-account Google OAuth works on the active origin. Fresh-account
@@ -44,13 +46,14 @@ Worker's Dodo mode/credentials could not be verified. See
   `verify` and `Hosted beta smoke`.
 - Dodo's Live dashboard says payments are active; Product Information,
   Personal Information, and Bank Verification are approved. The Live takeover
-  product preview has Pay What You Want with a `$5.00` minimum. The enabled
-  Live webhook still points to the Vercel rollback URL and subscribes only to
-  cancelled, failed, and succeeded payment events; it had no delivery attempts
-  in the prior 24 hours. Cloudflare exposes the Dodo secret names only, so the
-  Worker's mode and credential alignment remain unverified. No keys, webhook,
-  Worker secrets, or payments were changed. This is status only, not a release
-  prerequisite; details are in `INTEGRATION_NOW.md`.
+  product `pdt_0NnJBiDoKwxHCue0tPoZP` preview has Pay What You Want with a
+  `$5.00` minimum. A restricted Live key is staged in Dodo for owner transfer;
+  it has not been installed in Cloudflare. The enabled Live webhook still
+  points to the Vercel rollback URL and subscribes only to cancelled, failed,
+  and succeeded payment events; it had no delivery attempts in the prior 24
+  hours. Cloudflare exposes secret names only, so the Worker's mode and
+  credential alignment remain unverified. No payment was submitted. This is
+  status only, not a release prerequisite; details are in `INTEGRATION_NOW.md`.
 
 This snapshot supersedes older dated notes below where they conflict.
 
