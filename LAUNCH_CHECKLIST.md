@@ -22,8 +22,11 @@ Nothing is marked beyond the level actually evidenced.
   verified, but no age attestation or Dodo checkout was submitted.
 - Existing-account Google OAuth works on the active origin. Fresh-account
   welcome/handle creation still needs a human verification pass.
-- Historical Dodo/sandbox tags and sales remain visible. Preserve immutable
-  history; owner must choose how to label these before inviting beta users.
+- Owner-approved sandbox reset completed 2026-10-08. The public market shows
+  `$0`; `domains`, `sales`, `quotes`, `payment_events`, `refunds`, and
+  `analytics_events` are empty. All 11 Auth users/profiles remain; no protected
+  backup was available, and Dodo-side Test Mode records were not changed. The
+  normal immutable-ledger rule remains in force.
 - `ALERT_WEBHOOK_URL` is absent from Worker secrets. `SUPABASE_DB_URL` is
   absent from repository and environment secret lists. The repository is
   public, so the backup workflow now skips raw database artifacts until a

@@ -8,6 +8,20 @@ same-version 25-payment Dodo Test Mode race was completed on 2026-09-19 and is
 now **Staging verified**; earlier 2026-09-17/18 notes that call it blocked are
 historical evidence only.
 
+## Owner-directed sandbox data reset — 2026-10-08
+
+After the owner's explicit confirmation, the hosted Supabase project
+`vctlhslzmplawvktnbgb` was reset. `public.domains`, `public.sales`,
+`public.quotes`, `public.payment_events`, `public.refunds`, and
+`public.analytics_events` each have zero rows. The 11 `public.profiles` and 11
+`auth.users` remain; the schema is unchanged. The active beta now shows an empty
+market at `$0` with no takeovers. No protected backup was available, so these
+rows cannot be recovered from the configured backup workflow. Dodo-side Test
+Mode records were not changed. This was a one-time owner-approved sandbox
+reset; the normal immutable-ledger rule remains in force. Historical hosted
+test runs below took place before the reset, and their database replay,
+refund, and provenance rows are gone.
+
 ## Hosted Realtime CSP check (2026-10-08)
 
 The enforced CSP on the beta omitted `wss://*.supabase.co`, blocking the
@@ -220,9 +234,10 @@ remain open.
   on the deployed age-gated version. Do not reuse real card data in Test Mode.
 - Fresh-account Google OAuth → welcome → handle creation has not been verified;
   only the existing owner account has passed sign-in/sign-out/sign-in.
-- Public beta pages still show historical Dodo/sandbox test tags and sales.
-  Preserve immutable history; the owner must review whether/how to label these
-  before inviting beta users. Do not delete hosted sales or payment records.
+- The owner-directed sandbox reset on 2026-10-08 cleared hosted test tags and
+  sales; the public market is now empty. The one-time reset does not change the
+  normal immutable-ledger rule. See the dated reset record above. Keep Dodo in
+  Test Mode until the remaining launch gates are explicitly cleared.
 - Confirm backup and alert secrets and recovery readiness before live mode.
   Keep Dodo in Test Mode until all these owner gates are explicitly cleared.
 
