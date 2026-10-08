@@ -149,6 +149,30 @@ during this inspection. The owner was asked whether to purge or keep these
 current records; no decision has been received. The no-backup and immutable
 sales-history facts above still apply.
 
+## Live webhook routing refresh — 2026-10-09
+
+After the owner's authorization, the enabled Dodo Live endpoint
+`ep_3J8wf8S8h51KeKjYCRWKiCoge3U` was changed from the Vercel rollback URL to
+`https://priced.pricedapp.workers.dev/api/webhooks/payments`. Its description
+now identifies the Cloudflare Live route. It subscribes to all 13 events used
+for payment, refund, and dispute handling: `payment.succeeded`,
+`payment.failed`, `payment.cancelled`, `payment.processing`, `refund.succeeded`,
+`refund.failed`, and `dispute.opened`, `dispute.challenged`,
+`dispute.accepted`, `dispute.cancelled`, `dispute.expired`, `dispute.won`, and
+`dispute.lost`. This matches the current [Dodo event catalog](https://docs.dodopayments.com/developer-resources/webhooks/intents/webhook-events-guide)
+and the application handler. The endpoint remains enabled. No webhook test or
+Live payment was submitted.
+
+The Cloudflare secret-name listing confirms the Dodo variables exist but does
+not reveal their values. Worker mode, Live key/product alignment, and webhook
+signing-key alignment remain unverified. The staged restricted Live API key
+must be revoked and replaced before use; the owner must enter the replacement
+key and Live webhook signing secret directly in the Worker's Production
+settings. Only after that handoff can the Worker be switched to the Live mode
+and product, and the Test webhook disabled for this Worker. No Live payment
+was made. The two current market records remain pending the owner's earlier
+purge-or-keep choice.
+
 ## Active beta hostname migration (2026-09-30)
 
 The owner selected the available Cloudflare account namespace `pricedapp`;
