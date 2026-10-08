@@ -136,6 +136,19 @@ refund/dispute events enabled, and disable the Test endpoint for this Worker.
 The owner approved this cutover, but the credential handoff and provider/Worker
 configuration changes are still pending. No Live payment was submitted.
 
+## Post-reset market and payment-mode check — 2026-10-09
+
+The earlier reset section records the database immediately after its purge.
+At this later read-only check, the public market shows two rows totaling `$20`:
+`claude.dev` held by `@harshit` at `$15` and `claude.com` held by `@harshit`
+at `$5`. The Dodo Test Mode payments page shows recent `$15.00` and `$5.90`
+payments dated 8 Oct; the amounts align with those offers, but the payment
+metadata was not inspected to prove a row-by-row match. Dodo Live's payments
+page shows no payments. No market rows were deleted and no payment was made
+during this inspection. The owner was asked whether to purge or keep these
+current records; no decision has been received. The no-backup and immutable
+sales-history facts above still apply.
+
 ## Active beta hostname migration (2026-09-30)
 
 The owner selected the available Cloudflare account namespace `pricedapp`;

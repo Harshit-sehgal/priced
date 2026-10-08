@@ -34,11 +34,15 @@ and the Live webhook still points to the Vercel rollback URL. See
   verified, but no age attestation or Dodo checkout was submitted.
 - Existing-account Google OAuth works on the active origin. Fresh-account
   welcome/handle creation still needs a human verification pass.
-- Owner-approved sandbox reset completed 2026-10-08. The public market shows
-  `$0`; `domains`, `sales`, `quotes`, `payment_events`, `refunds`, and
-  `analytics_events` are empty. All 11 Auth users/profiles remain; no protected
-  backup was available, and Dodo-side Test Mode records were not changed. The
-  normal immutable-ledger rule remains in force.
+- The owner-approved 2026-10-08 sandbox reset left the market tables empty at
+  completion, with all 11 Auth users/profiles retained. At a later read-only
+  check on 2026-10-09, the public market showed `claude.dev` (`@harshit`, `$15`)
+  and `claude.com` (`@harshit`, `$5`), total `$20`. Dodo Test Mode showed recent
+  `$15.00` and `$5.90` payments on 8 Oct that align by amount with those offers;
+  exact payment metadata was not inspected. Dodo Live showed no payments. No
+  new deletion occurred during this check; no backup is available, and Dodo's
+  Test records remain. The owner was asked whether to purge or keep the current
+  rows. The immutable-ledger rule remains in force pending that direction.
 - `ALERT_WEBHOOK_URL` is absent from Worker secrets. `SUPABASE_DB_URL` is
   absent from repository and environment secret lists. The repository is
   public, so the backup workflow now skips raw database artifacts until a
