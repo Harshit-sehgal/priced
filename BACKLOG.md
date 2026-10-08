@@ -32,14 +32,16 @@ sequential browser submissions crossed the TTL and produced 24 expired
 quotes. That run was reconciled successfully, but it is not the result used to
 clear the strict timing gate.
 
-Latest hosted refresh (2026-10-08): the active Worker is on version
-`d53578bf-3dd8-440d-a189-0bdbaacb729f`; Realtime CSP/WebSocket, health/readiness,
-and the 11-check staging smoke passed. PR #83 copy is deployed. The owner
+Latest hosted refresh (2026-10-08): after PR #87, the active Worker is on
+version `9897cc5d-ebb4-41a2-b888-44d3ca2dee9b`. Read-only health checks for
+liveness, Supabase, Redis, and origin passed; the hosted login shows Google and
+no unverified email magic-link controls. PR #83 copy is deployed. The owner
 approved a hosted sandbox data reset: the public market is empty at `$0`, while
-the 11 Auth users/profiles remain. No protected backup was available, and
-Dodo-side Test Mode records were not changed. Fresh-account OAuth and the full
-Test Mode matrix on the age-gated build remain unverified. GitHub branch
-protection already requires `verify` and `Hosted beta smoke`.
+the 11 Auth users/profiles remain. Dodo's dashboard remains in Test Mode and
+its verification page shows all three checks approved; no Dodo mode or Worker
+secret was changed. Fresh-account OAuth and the full Test Mode matrix on the
+age-gated build remain unverified. GitHub branch protection already requires
+`verify` and `Hosted beta smoke`.
 
 ## Lane A — Owner-gated infra (do first, blocks all real-money verification)
 

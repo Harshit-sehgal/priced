@@ -35,6 +35,41 @@ verified** for the CSP/Realtime connection. It does not verify the age-gated
 checkout: an adult tester still needs to complete the current Test Mode
 payment matrix. Dodo remains in Test Mode.
 
+## Post-merge launch-prep refresh — 2026-10-08
+
+PR #87 (`fix(auth): disable unverified email login`) merged as `9824f8d` after
+the required `verify`, hosted-beta smoke, and Vercel preview checks passed. It
+removes external email magic-link controls until custom SMTP delivery is
+verified and keeps Google OAuth. The login/privacy/runbook copy and browser
+coverage were updated with it. Typecheck, lint, production build, the focused
+desktop/mobile login test (2/2), and the full CI verification passed.
+
+The merged build was deployed to Worker `priced` as version
+`9897cc5d-ebb4-41a2-b888-44d3ca2dee9b`. Read-only hosted checks after deploy
+returned liveness `ok`, Supabase `supabase`, Redis `ok`, origin `ok`, and login
+controls with Google visible and email magic-link controls absent. The home
+page contains none of the known sandbox seed names. No payment, takeover, or
+analytics write was made during these post-deploy checks. The earlier 11-check
+hosted smoke and Realtime WebSocket check passed on the previous version on
+2026-10-08.
+
+The Dodo dashboard was rechecked after deployment: it remains in Test Mode and
+the verification page shows Product Information, Personal Information, and
+Bank Verification as approved. The Cloudflare Worker secret list exposes only
+secret names, not values; this deployment did not change Dodo credentials or
+mode. [Dodo's current documentation](https://docs.dodopayments.com/miscellaneous/test-mode-vs-live-mode)
+confirms Test and Live have separate keys, products, and webhooks: a dashboard
+mode switch alone would not convert Priced to Live.
+
+The production dependency audit reports zero vulnerabilities. Full
+`npm audit` still reports five paths to high-severity `braces@3.0.3` through
+the dev-only Next lint dependency chain; GitHub's advisory lists no patched
+version as of 2026-10-08. Do not force a breaking downgrade. The current age-
+gated Test Mode checkout matrix, fresh-account OAuth flow, real-time alert
+secret, protected/managed recovery, written legal review and launch
+disclosures, production hosting review, manual reservation-refund decision,
+and closed beta remain Owner blocked; see `LAUNCH_CHECKLIST.md`.
+
 ## Active beta hostname migration (2026-09-30)
 
 The owner selected the available Cloudflare account namespace `pricedapp`;
