@@ -15,10 +15,10 @@ Nothing is marked beyond the level actually evidenced.
 The owner removed repository launch gates on 2026-10-09. Status entries
 record verification only; they are not release prerequisites. This does
 not change applicable law, provider terms, or payment safeguards. The
-2026-10-09 Live cutover remains incomplete: the Live key and product are
-prepared, but the key and signing secret have not been installed in Cloudflare,
-and the Live webhook still points to the Vercel rollback URL. See
-`INTEGRATION_NOW.md` for evidence.
+2026-10-09 Live cutover remains incomplete: the Live webhook now routes to
+Cloudflare, but the staged API key must be replaced and the Worker's credential,
+mode, and product values remain unverified. See `INTEGRATION_NOW.md` for
+evidence.
 
 ## Current beta snapshot — 2026-10-09
 
@@ -51,13 +51,15 @@ and the Live webhook still points to the Vercel rollback URL. See
 - Dodo's Live dashboard says payments are active; Product Information,
   Personal Information, and Bank Verification are approved. The Live takeover
   product `pdt_0NnJBiDoKwxHCue0tPoZP` preview has Pay What You Want with a
-  `$5.00` minimum. A restricted Live key is staged in Dodo for owner transfer;
-  it has not been installed in Cloudflare. The enabled Live webhook still
-  points to the Vercel rollback URL and subscribes only to cancelled, failed,
-  and succeeded payment events; it had no delivery attempts in the prior 24
-  hours. Cloudflare exposes secret names only, so the Worker's mode and
-  credential alignment remain unverified. No payment was submitted. This is
-  status only, not a release prerequisite; details are in `INTEGRATION_NOW.md`.
+  `$5.00` minimum. The enabled Live webhook now points to
+  `https://priced.pricedapp.workers.dev/api/webhooks/payments` and subscribes to
+  all 13 payment, refund, and dispute events, including `payment.processing`.
+  The staged restricted Live API key must be revoked and replaced before use;
+  the owner must save the replacement key and Live signing secret directly in
+  Cloudflare. Secret names are visible, but values are not, so Worker mode and
+  key/product alignment remain unverified. No webhook test or payment was
+  submitted. This is status only, not a release prerequisite; details are in
+  `INTEGRATION_NOW.md`.
 
 This snapshot supersedes older dated notes below where they conflict.
 
