@@ -6,7 +6,7 @@ Do not repeat the product-classification investigation unless Dodo changes its d
 
 ## Current objective
 
-Integrate Dodo Payments end to end, first in Test Mode, then prepare Live Mode without enabling real charges until the staging gate is green.
+Integrate Dodo Payments in Test Mode and Live Mode with separate environment configuration. On 2026-10-09, the owner removed the repository's remaining release gates; this document records provider setup and verification facts, not launch prerequisites.
 
 Priced sells temporary symbolic holder status for a domain tag inside Priced. It does not transfer the real domain, DNS control, trademark rights, company ownership, equity, affiliation, endorsement, or authority to represent the real domain owner.
 
@@ -14,7 +14,12 @@ There are no user payouts, cash prizes, betting outcomes, chance mechanics, with
 
 Priced Credits remain disabled.
 
-## Required integration work
+## Integration verification reference (non-gating)
+
+The owner removed repository launch gates on 2026-10-09. The checks below
+describe integration evidence and runtime behavior; they are not release
+prerequisites. Do not weaken payment validation, signed-webhook verification,
+idempotency, refund handling, or takeover concurrency controls.
 
 1. Use Dodo Test Mode first.
 2. Create or reuse the approved Single Payment product with Pay What You Want enabled and a minimum price of $5.
@@ -27,12 +32,10 @@ Priced Credits remain disabled.
 9. Confirm refund and idempotency behavior against the real Dodo sandbox API.
 10. Keep Stripe only as an optional adapter. Do not replace Dodo unless a new provider issue appears.
 
-## Live Mode gate
+## Live Mode configuration
 
-After the full staging matrix is green, prepare the Production Dodo configuration using separate live credentials and a production webhook secret.
+Use the Live API key, product, and webhook signing key for the chosen production environment. Keep these separate from Test Mode resources.
 
 Do not put live Dodo credentials in Preview deployments.
 
 Do not commit any Dodo API key or webhook secret to GitHub.
-
-Do not enable real-money processing until the remaining production hosting, legal-document, disaster-recovery, and end-to-end launch checks are complete.

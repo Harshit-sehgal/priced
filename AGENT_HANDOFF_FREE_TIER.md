@@ -1,6 +1,6 @@
 # Priced Free Tier Agent Handoff
 
-Read `AGENTS.md` first. This file records the current zero-cost infrastructure strategy for sandbox and closed beta.
+Read `AGENTS.md` first. This file records the current zero-cost infrastructure strategy for sandbox and closed beta. The owner removed repository launch gates on 2026-10-09; listed verification steps are status references, not release prerequisites.
 
 If older wording in `DEPLOY.md`, `BACKLOG.md`, or `LAUNCH_CHECKLIST.md` conflicts with this file, `AGENTS.md`, or `INTEGRATION_NOW.md`, use the newer agent files.
 
@@ -19,7 +19,7 @@ Do not upgrade Supabase, Vercel, Upstash, Sentry, or another provider without ex
 
 Dodo Payments product verification/approval for Priced is already complete. Do not repeat that investigation unless Dodo itself requests another review.
 
-Use Dodo Test Mode until the hosted integration gate is green.
+The active beta was last recorded in Dodo Test Mode. The owner removed remaining repository release gates on 2026-10-09; keep mode and verification status factual.
 
 Priced Credits remain OFF.
 
@@ -70,7 +70,7 @@ Ordinary pull request previews remain in demo mode with no privileged secrets.
 
 Do not enable Supabase PITR during the free sandbox phase.
 
-Before real customer payments, create and test a logical backup procedure using Supabase CLI `db dump` or `pg_dump`, and revisit environment isolation and disaster recovery.
+Backup and recovery status is recorded for operational reference. It is no longer a repository release gate.
 
 ## Vercel (rollback/reference only)
 
@@ -109,7 +109,7 @@ Use signed webhook endpoint:
 
 Run actual Dodo Test Mode transactions and verify successful payment, failure, cancellation, duplicate delivery, stale quote, wrong amount, missing metadata, simultaneous challengers, stale-payment refund, refund failure, provider outage, webhook retry, and idempotency.
 
-Do not enable live Dodo credentials until the full hosted integration gate is green and real-money production requirements have been reviewed.
+Keep Live and Test Dodo credentials, products, and webhooks separate. Never expose Live credentials to ordinary Preview deployments or commit them to GitHub.
 
 ## Upstash
 
@@ -156,7 +156,7 @@ After those resources are available, run hosted integration verification:
 7. Share/CTA flows.
 8. Mobile checks at 375, 430, and 768 px.
 
-Only then consider a 10 to 20 person closed beta.
+The owner may choose a closed beta as a rollout step; monitor payment and refund events during it.
 
 ## Agent behavior
 

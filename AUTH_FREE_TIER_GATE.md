@@ -1,6 +1,8 @@
-# Priced Free Tier Auth Gate
+# Priced Free Tier Auth Setup Notes
 
-This file defines the authentication strategy for the zero-cost sandbox and closed beta phase.
+This file records authentication setup for the free beta. Email magic-link UI
+stays disabled until SMTP works; that feature choice is not a repository
+release gate. The owner removed repository launch gates on 2026-10-09.
 
 ## Primary beta sign-in
 

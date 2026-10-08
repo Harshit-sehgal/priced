@@ -1,12 +1,41 @@
 # Priced Integration Execution State
 
-This file is the current authority for the next execution phase and overrides older wording that treats Dodo product eligibility as unresolved.
+This file records current integration facts and historical execution evidence. Dodo product eligibility is confirmed by the owner.
 
-Dated sections below preserve the status observed at that time; later dated
+## Owner-directed release policy — 2026-10-09
+
+The owner removed repository-defined launch gates. Items marked pending, blocked, or unverified remain factual status records, not release prerequisites. This policy does not change applicable law, provider terms, or runtime payment safeguards. At policy adoption, the last recorded Dodo and Worker configuration was Test Mode. The current Live-mode review is below.
+
+Entries below preserve the status observed at that time; later dated
 verification supersedes earlier status statements. In particular, the clean
 same-version 25-payment Dodo Test Mode race was completed on 2026-09-19 and is
 now **Staging verified**; earlier 2026-09-17/18 notes that call it blocked are
 historical evidence only.
+
+## Live-mode configuration review — 2026-10-09
+
+The Dodo dashboard was switched to its Live view for inspection. Dodo shows
+“Live payments are active”; Product Information, Personal Information, and
+Bank Verification are approved. The Live `Priced Takeover` one-time product
+preview shows Pay What You Want with a `$5.00` minimum.
+
+The enabled Live webhook still targets the Vercel rollback URL
+`https://internet-price-tag.vercel.app/api/webhooks/payments` and subscribes
+only to `payment.cancelled`, `payment.failed`, and `payment.succeeded`. It has
+no delivery attempts in the last 24 hours. Its signing secret remained masked
+and was not read. The active Cloudflare Worker is `priced`, version
+`3c8948f2-5777-432c-950d-a1bf46951708` (deployed 2026-10-08 20:59 UTC). Its
+secret-name listing includes the Dodo variables, but does not reveal values;
+the Worker’s configured Dodo mode and Live credential alignment therefore
+remain unverified. Read-only liveness, database, and Redis checks returned
+healthy responses, and the public routes checked returned HTTP 200.
+
+No Live API key was created, no webhook or Worker secret was changed, and no
+payment was submitted. The local share-visibility fix and documentation edits
+are not deployed. Local typecheck, lint, build, unit, schema, browser, and
+production-dependency audit checks passed. This is a factual configuration
+status, not a repository release gate. Dodo keeps Test and Live API keys,
+products, and webhooks separate ([environment documentation](https://docs.dodopayments.com/miscellaneous/test-mode-vs-live-mode)).
 
 ## Owner-directed sandbox data reset — 2026-10-08
 
@@ -31,9 +60,9 @@ WebSocket host. A clean Cloudflare build was deployed to Worker version
 headers both include the host, and a headless browser opened one Supabase
 Realtime WebSocket with zero CSP blocks. Liveness, Supabase, Redis, origin,
 and the 11-check staging smoke passed after deployment. This is **Staging
-verified** for the CSP/Realtime connection. It does not verify the age-gated
-checkout: an adult tester still needs to complete the current Test Mode
-payment matrix. Dodo remains in Test Mode.
+verified** for the CSP/Realtime connection. The age-attested checkout and
+current Test Mode payment matrix were not exercised on that build. Dodo
+remained in Test Mode at this snapshot.
 
 ## Post-merge launch-prep refresh — 2026-10-08
 
@@ -64,11 +93,12 @@ mode switch alone would not convert Priced to Live.
 The production dependency audit reports zero vulnerabilities. Full
 `npm audit` still reports five paths to high-severity `braces@3.0.3` through
 the dev-only Next lint dependency chain; GitHub's advisory lists no patched
-version as of 2026-10-08. Do not force a breaking downgrade. The current age-
-gated Test Mode checkout matrix, fresh-account OAuth flow, real-time alert
-secret, protected/managed recovery, written legal review and launch
+version as of 2026-10-08. Do not force a breaking downgrade. The age-gated Test Mode checkout matrix, fresh-account OAuth flow, real-time
+alert secret, protected/managed recovery, written legal review and launch
 disclosures, production hosting review, manual reservation-refund decision,
-and closed beta remain Owner blocked; see `LAUNCH_CHECKLIST.md`.
+and closed beta were recorded as Owner blocked at this snapshot. The owner
+retired these as repository release gates on 2026-10-09. See
+`LAUNCH_CHECKLIST.md` for factual status.
 
 ## Active beta hostname migration (2026-09-30)
 
@@ -130,8 +160,9 @@ hosted secret/credential steps remain **Owner blocked**.
 - **Free DR backstop:** `.github/workflows/backup.yml` takes a daily logical
   `pg_dump` (via the `postgres:17` image, so a newer client can always dump an
   older server) and uploads a 30-day artifact, verifying the dump is
-  non-trivial and contains `public.sales`. This is the free-tier safety net;
-  managed backups/PITR are still required before real-money production.
+  non-trivial and contains `public.sales`. This was the free-tier recovery
+  setup at this snapshot; backup/PITR status is operational reference, not a
+  repository release gate.
 - **Money-path reachability:** the staging smoke suite and the 15-minute health
   workflow now probe `POST /api/webhooks/payments`. An unsigned body is
   rejected with 400 *before* any DB write, so the probe moves no money and
@@ -196,7 +227,7 @@ the deployed Worker.
 - The Dodo Test Mode matrix is still partial. `npm audit --omit=dev` is clean,
   but full `npm audit` reports five high-severity paths from the single,
   currently unpatched dev-only `braces@3.0.3` advisory documented above.
-- Real-money launch remains blocked on written Indian legal review, including
+- At this 2026-10-08 snapshot, real-money launch was described as blocked on written Indian legal review, including
   whether the self-attestation is sufficient for buyer age/capacity and
   upcoming DPDP child-data consent/tracking requirements,
   the paid ranking's statutory classification under the PROG Act and 2026
@@ -241,47 +272,6 @@ remain open.
   **Staging verified** for the code/version tested then. It is not evidence
   that the newly deployed age-gated checkout completed end-to-end. The latest
   Dodo Test Mode matrix remains partial for this build.
-
-### Remaining owner/legal gates before real-money payments
-
-- The age prompt is an **18+ self-attestation**, not independent age
-  verification. A minor could falsely select it. Do not describe this as
-  verified age or a legal compliance certification. A real adult tester must
-  perform any hosted checkout that submits this assertion.
-- Obtain written Indian counsel review of the paid-ranking business model,
-  transaction/consumer disclosures, seller/operator and grievance identity,
-  refunds, tax invoicing, privacy/analytics, and the suitability of
-  self-attestation. The owner wants no public personal name; resolve that with
-  counsel before taking live payments. Use `LEGAL_REVIEW_BRIEF.md` to request a
-  written opinion. The Majority Act sets majority at 18 for
-  persons domiciled in India and the Contract Act ties capacity to majority,
-  but that does not decide whether this product needs stronger age checks.
-- Counsel must assess whether the actual product is within the Promotion and
-  Regulation of Online Gaming Act/Rules and whether the paid placement is an
-  e-commerce/sponsored listing. The 2026 online gaming rules took effect
-  2026-05-01. The 2026 E-Commerce amendments take effect 2027-01-01 and address
-  sponsored-listing disclosure, search results, grievance handling, and seller
-  disclosures. DPDP commencement is phased; specified core provisions begin
-  18 months after the 2025-11-13 notification (2027-05-13).
-- The full hosted Test Mode provider matrix still needs an adult tester for
-  success, failure, cancellation, duplicate event/webhook, stale quote/refund,
-  refund failure, provider outage/retry, and wrong/missing metadata scenarios
-  on the deployed age-gated version. Do not reuse real card data in Test Mode.
-- Fresh-account Google OAuth → welcome → handle creation has not been verified;
-  only the existing owner account has passed sign-in/sign-out/sign-in.
-- The owner-directed sandbox reset on 2026-10-08 cleared hosted test tags and
-  sales; the public market is now empty. The one-time reset does not change the
-  normal immutable-ledger rule. See the dated reset record above. Keep Dodo in
-  Test Mode until the remaining launch gates are explicitly cleared.
-- Confirm backup and alert secrets and recovery readiness before live mode.
-  Keep Dodo in Test Mode until all these owner gates are explicitly cleared.
-
-Legal references checked for this status: [India Code Majority Act, 1875](https://www.indiacode.nic.in/bitstream/123456789/15299/1/majorityact.pdf),
-[India Code Contract Act, 1872](https://www.indiacode.nic.in/bitstream/123456789/2187/2/A187209.pdf),
-[MeitY Promotion and Regulation of Online Gaming Act, 2025](https://www.meity.gov.in/static/uploads/2025/10/8a7f103cefc68ed8aaa2ebc9a2ed7c13.pdf),
-[MeitY Promotion and Regulation of Online Gaming Rules, 2026](https://www.meity.gov.in/static/uploads/2026/04/7e0b02d37fd07f81fa48578a9996aa85.pdf),
-[MeitY DPDP commencement notification](https://www.meity.gov.in/static/uploads/2025/11/c56ceae6c383460ca69577428d36828b.pdf), and
-[PIB E-Commerce amendment summary](https://www.pib.gov.in/PressReleasePage.aspx?PRID=2308759&lang=1&reg=48).
 
 ## Hosted status refresh — 2026-10-08
 
@@ -631,7 +621,7 @@ Details: `BACKLOG.md` Lane C8.
 - Privileged RPCs: service-role only
 - Priced Credits: OFF
 - Pricing formula: `increment = max($5, 1% of current price)` and `minimum takeover offer = current price + increment`; buyers may choose a higher offer
-- Goal: complete a real free-tier sandbox/closed-beta integration before enabling real money
+- Historical goal (2026-09-11): complete free-tier sandbox/closed-beta integration before Live payment configuration.
 
 ## Recorded execution evidence (2026-09-11)
 
@@ -671,7 +661,7 @@ Do not enable Credits.
 Do not weaken RLS, webhook verification, CSRF protections, redirect validation, rate limits, or takeover concurrency controls.
 Do not create paid infrastructure without explicit owner approval.
 
-## Parallel integration tracks
+## Historical integration plan (2026-09-11; release policy superseded 2026-10-09)
 
 ### Track A: Cloudflare hosting and auth (Vercel rollback/reference)
 
@@ -694,7 +684,7 @@ Do not create paid infrastructure without explicit owner approval.
 5. Verify event names and payload fields against current Dodo docs before changing code. **Implemented**: the endpoint is currently subscribed to all 12 required payment, refund, and dispute events; the hosted endpoint configuration was rechecked on 2026-09-12.
 6. Run real signed sandbox transactions and the full payment-state matrix. **Staging verified (partial)** for successful and declined payments, signed webhook delivery, duplicate-event replay/idempotency, provider replay of a successful event with a new HTTP 200 delivery, synthetic provider `payment.failed` and `payment.cancelled` delivery with HTTP 200, a real customer-cancellation state transition with `payment.cancelled` delivered HTTP 200, the fail-closed synthetic missing-metadata/refund-failure path with repeatable HTTP 500 retry behavior, a real missing-metadata payment with successful full refund and no matching sale, cancelled-checkout UI behavior, quote consumption, atomic takeover finalization, tax-inclusive provider payload handling, stale/wrong-amount refunds, a clean same-version 25-way payment/refund race with zero expired quotes, and the provider-outage path. For the latter, a temporary invalid `DODO_PAYMENTS_BASE_URL` deployment returned hosted `502 checkout_failed` before creating a provider payment; the override was removed and normal health/smoke checks passed. Remaining matrix cases are the owner/provider-gated cases listed below.
 7. Validate stale quote refunds, wrong-amount refunds, idempotency, duplicate webhooks, retries, simultaneous challengers, provider failure, and refund failure.
-8. Do not enable live mode until the complete integration gate is green.
+8. Historical instruction, retired 2026-10-09: Live mode required a green integration gate.
 
 ### Track C: Upstash and operational checks
 
@@ -726,7 +716,7 @@ Do not enable Supabase PITR or buy monitoring solely for staging.
 Do not buy a custom domain just to unblock sandbox testing.
 Do not upgrade Vercel merely to complete sandbox integration.
 
-Before accepting real customer payments, re-check production hosting plan compliance, disaster recovery, legal documents, support contact, live Dodo credentials, and environment isolation.
+The owner retired these repository checks as release gates on 2026-10-09. This does not remove applicable legal or provider obligations. Keep current configuration and verification status factual.
 
 ## Agent behavior
 
@@ -737,7 +727,7 @@ Use focused PRs and keep required GitHub CI green.
 
 ## Completion definition
 
-This phase is complete only when a real hosted beta environment successfully exercises Supabase, Auth, Dodo Test Mode, signed webhooks, Redis rate limits, Realtime, analytics, and concurrency end to end with no unexplained payment state.
+The owner decides when to close this phase. Report which hosted flows were verified and list unverified states accurately.
 
 ## Latest operational verification — 2026-09-13
 

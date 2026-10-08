@@ -1,24 +1,21 @@
-# Vercel Commercial Use Gate
+# Commercial Hosting Notes
 
 The active free beta now runs on Cloudflare Workers at
 `https://priced.pricedapp.workers.dev`; the Vercel project is retained
-for rollback/reference. This gate remains relevant only if Vercel is selected
-again for real-money production. Cloudflare's applicable commercial terms and
-limits must still be reviewed before enabling live payments there.
+for rollback/reference. On 2026-10-09, the owner removed hosting review as a
+repository release gate. This file retains historical context about Vercel;
+the active host is Cloudflare Workers.
 
-This is a launch policy gate, not a sandbox blocker.
+This is reference material, not a launch gate.
 
-The current objective is a zero-cost sandbox and closed beta environment. Vercel Hobby may be used for non-commercial testing and development, subject to Vercel's current terms and limits.
+Historical context: the project used Vercel Hobby for non-commercial sandbox testing. The active deployment is Cloudflare Workers. Follow each provider's current terms for any selected deployment.
 
-Do not accept real customer payments on a Vercel Hobby deployment if doing so would violate Vercel's current non-commercial Hobby restriction.
+The owner manages provider terms and hosting choices. This repository policy
+does not waive platform terms or applicable law.
 
-Before enabling real money, choose one compliant hosting path:
+Historical hosting choices were:
 
 1. Upgrade the existing Vercel project to a plan that permits commercial use.
 2. Move the production deployment to another hosting platform whose current terms permit the intended commercial use.
 
-Do not start a paid Vercel plan merely to complete sandbox verification.
-
-Do not block Google OAuth, Supabase, Dodo Test Mode, Upstash, browser testing, or the closed no-real-money sandbox on this decision.
-
-When agents report production readiness, they must distinguish technical readiness from hosting-plan compliance.
+The active deployment remains the Cloudflare Worker documented in `INTEGRATION_NOW.md`.

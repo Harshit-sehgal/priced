@@ -2,7 +2,7 @@
 
 **Prepared:** 2026-10-08
 
-**Purpose:** Obtain written advice before Priced accepts real customer payments.
+**Purpose:** Request advice on legal obligations relevant to Priced. The owner removed repository launch gates on 2026-10-09; that decision does not change applicable law or provider terms.
 
 This brief records the product and current implementation as understood by the
 project team. It is not legal advice or a conclusion about the laws that apply.
@@ -61,9 +61,9 @@ Please verify the facts, current law, provider terms, and required documents.
 7. **Provider and hosting terms:** Review Dodo Payments terms for the described
    use and assess Cloudflare Workers terms for intended commercial operation.
    Vercel is retained for rollback/reference only.
-8. **Launch boundary:** State which activities may proceed in Test Mode or a
-   closed beta before live payments, and list every condition that must be met
-   before enabling Dodo Live Mode or announcing a public launch.
+8. **Launch context:** Describe the implications of the owner's decision to
+   remove repository release gates, and identify any legal obligations that
+   continue regardless of internal launch policy.
 
 ## Requested written output
 
@@ -76,7 +76,7 @@ launch. Flag assumptions that need confirmation from the owner.
 ## Project references
 
 - Current integration status: `INTEGRATION_NOW.md`
-- Launch gates and evidence: `LAUNCH_CHECKLIST.md`
+- Owner release policy and verification status: `LAUNCH_CHECKLIST.md`
 - Product and payment constraints: `AGENTS.md`
 - Operator and deployment procedures: `DEPLOY.md`
 - Current user-facing terms: `src/app/terms/page.tsx`,

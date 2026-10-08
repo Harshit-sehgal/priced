@@ -5,6 +5,7 @@ import { getSale } from "@/lib/repo";
 import { ShareButtons } from "@/components/ShareButtons";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { persistViewEvent } from "@/lib/view-events";
+import { demoViewer, getSessionUser, isAuthConfigured } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,12 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
 
   const { sale, current, unavailable } = data;
   const stillHolder = !unavailable && current?.holderUserId === sale.buyerUserId;
+  const viewer = stillHolder
+    ? isAuthConfigured
+      ? await getSessionUser().catch(() => null)
+      : demoViewer().user
+    : null;
+  const canShare = stillHolder && viewer?.id === sale.buyerUserId;
   const next = quoteFor({
     domain: sale.domain,
     holder: current?.holderHandle ?? null,
@@ -113,12 +120,14 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
         )}
       </section>
 
-      <ShareButtons
-        domain={sale.domain}
-        priceCents={sale.priceCents}
-        handle={sale.buyerHandle}
-        saleId={sale.id}
-      />
+      {canShare ? (
+        <ShareButtons
+          domain={sale.domain}
+          priceCents={sale.priceCents}
+          handle={sale.buyerHandle}
+          saleId={sale.id}
+        />
+      ) : null}
 
       <section className="notice">
         <strong>What just happened?</strong> You paid for temporary symbolic holder status on this

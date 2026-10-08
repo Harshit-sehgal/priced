@@ -1,8 +1,8 @@
 # Go-Live Runbook
 
-Everything code-side is implemented and tested. This is the short, ordered
-path from this repository to accepting real money. Steps are owner-gated
-because they need accounts, credentials and a legal review.
+This runbook describes the current deployment and payment configuration. The
+owner removed remaining repository release gates on 2026-10-09. Keep technical
+status and environment configuration factual.
 
 ## 0. Prerequisites
 
@@ -53,7 +53,7 @@ because they need accounts, credentials and a legal review.
      `refund.succeeded`, `refund.failed`, and the Dodo `dispute.*` lifecycle events (`opened`, `challenged`,
      `accepted`, `cancelled`, `expired`, `won`, `lost`), then copy
      `DODO_PAYMENTS_WEBHOOK_KEY`.
-4. Use test credentials first; run the §76 sandbox gate (below) before switching live.
+4. Use Test Mode for sandbox checks. Live mode uses separate credentials, product, and webhook resources.
 5. Stripe remains only as an optional adapter (`STRIPE_*` keys) for experiments —
    when both are set, Dodo wins.
 
@@ -111,9 +111,9 @@ done
 STAGING_URL=https://priced.pricedapp.workers.dev npm run smoke:staging
 ```
 
-Keep ordinary untrusted previews secret-free/demo-only. Keep Dodo in Test Mode
-until the legal, backup, monitoring, closed-beta, and provider-wallet gates
-are explicitly cleared.
+Keep ordinary untrusted previews secret-free/demo-only. Set Dodo mode and
+credentials for the intended deployment; never reuse Test credentials for
+Live or expose Live credentials in previews.
 
 ## 3a. Vercel (rollback/reference hosting)
 
@@ -148,7 +148,7 @@ are explicitly cleared.
    when environment isolation is revisited for real-money production.
 4. Deploy `main`. The preview environment runs in demo mode by default.
 
-## 4. Sandbox payment gate (§76)
+## 4. Sandbox payment validation (§76)
 
 On the designated hosted beta origin with Dodo **Test Mode** credentials, run
 and record results. Do not configure privileged credentials on ordinary PR
@@ -222,27 +222,33 @@ consumed quote/sale, 24 stale quotes, zero expired quotes, and 24 successful
 full refunds while the deployed eight-per-window limiter and five-minute TTL
 stayed unchanged.
 
-## 5. Content + safety pass
+## 5. Content and safety reference
 
-- Read `terms`, `privacy`, `refunds` pages and have them reviewed by a
-  professional (plan §49). Edit freely — they are plain text pages.
-- Send `LEGAL_REVIEW_BRIEF.md` with those pages to Indian counsel and request
-  written launch conditions.
+- The owner may request professional review of the `terms`, `privacy`, and
+  `refunds` pages. This is no longer a repository release gate; applicable
+  law and provider terms remain in force.
+- `LEGAL_REVIEW_BRIEF.md` records questions and source links for counsel.
 - Add any sensitive domains you want blocked to the `reserved_domains` table
   (see `db/ops.sql` for operator queries).
 
-## 6. Flip to live
+## 6. Live configuration and rollout
 
 - Switch Dodo to live mode keys, update the webhook endpoint secret.
+- Keep Live credentials separate from Test credentials and Preview deployments.
 - Watch the Cloudflare live tail (`npx wrangler tail priced`) for the structured events from §56
   (`takeover_succeeded`, `payment_succeeded_takeover_stale`, `refund_failed`,
-  `takeover_finalization_error`) and wire alerts to the error-level ones.
-- Start with the closed beta (§77) before announcing publicly.
+  `takeover_finalization_error`) and wire alerts to the error-level ones if
+  desired.
+- A closed beta (§77) is an optional rollout step.
 
 ## 7. Backups & recovery (production Supabase / Postgres)
 
-- **At real-money promotion only** (not during the free beta, and not before the owner approves paid infrastructure): enable daily backups and Point-In-Time Recovery (PITR) in Supabase **Dashboard → Database → Backups**.
-- Keep at least 7 days of PITR window in production (verify via the dashboard after the first production sale).
+- Backup and recovery choices are owner-managed operations, not repository
+  release gates. The owner may choose daily backups or Point-In-Time Recovery
+  (PITR) in Supabase **Dashboard → Database → Backups**. Obtain explicit
+  owner approval before adding paid infrastructure.
+- If PITR is enabled, choose and verify a retention window that fits the
+  recovery plan.
 - **What is authoritative:** `sales` rows are the immutable ledger. `domains` can be rebuilt from sales; never rewrite sales to fix a bad state — append or operator-correct via `db/ops.sql` audit + reserved-domain/suspension actions. Reserving a tag that is currently held carries a refund obligation (Terms §7): refund the last funded payment in the provider dashboard first, then record the reservation with the refund reference in the audit detail — `db/ops.sql` has the query and the procedure.
 - **Restore procedure:** use Supabase's PITR restore to the last known-good timestamp, then verify `domains` vs `sales` consistency and that `finalize_takeover` still satisfies the in-memory race tests (`npm run test:concurrency`). Re-verify the webhook signing secret and `SUPABASE_SERVICE_ROLE_KEY` are unchanged after restore.
 - **Free-beta logical backup verification:** on 2026-09-11, the hosted public schema and data were dumped with the authenticated Supabase CLI and restored into an isolated PostgreSQL 17 container. The restore completed with 3 domains, 3 sales, 2 profiles, 97 analytics events, and 5 payment events. This is **Staging verified** evidence for the logical recovery procedure; it is not managed backup/PITR coverage. The Free Plan does not provide managed project backups, so keep PITR disabled during the free beta.
