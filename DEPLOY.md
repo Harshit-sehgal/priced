@@ -31,7 +31,7 @@ because they need accounts, credentials and a legal review.
      ```
      Every migration is written to be re-runnable (idempotent DDL), so this is
      safe; it simply bypasses the history table, which is already non-canonical.
-3. **Authentication → Providers**: enable **Google** (needs an OAuth client from Google Cloud Console with redirect `https://<project-ref>.supabase.co/auth/v1/callback`) and **Email magic link** (disable confirm-signup captchas if you don't need them).
+3. **Authentication → Providers**: enable **Google** (needs an OAuth client from Google Cloud Console with redirect `https://<project-ref>.supabase.co/auth/v1/callback`). Enable **Email magic link** only after configuring and verifying custom SMTP; keep its UI disabled for external users until then.
 4. **Authentication → URL Configuration**: set Site URL to your app origin and add `<origin>/auth/callback` to redirect URLs.
 5. Copy from **Project Settings → API**:
    - `NEXT_PUBLIC_SUPABASE_URL`

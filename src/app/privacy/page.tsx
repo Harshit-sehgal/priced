@@ -36,8 +36,8 @@ export default function PrivacyPage() {
       <h2 className="display" style={{ fontSize: 18 }}>What we collect</h2>
       <ul className="stack" style={{ paddingLeft: "1.2rem", margin: 0 }}>
         <li>
-          <strong>Account.</strong> Whatever Google or the email magic link gives us to sign you in
-          — an account id and an email address — plus the handle you choose.
+          <strong>Account.</strong> Google sign-in gives us an account id and an email address, plus
+          the handle you choose.
         </li>
         <li>
           <strong>Payments.</strong> Provider payment and event identifiers, the amount, the

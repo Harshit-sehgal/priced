@@ -6,7 +6,8 @@ This file defines the authentication strategy for the zero-cost sandbox and clos
 
 Use Google OAuth as the primary sign-in method for external beta users.
 
-The application already implements Google OAuth and email magic-link UI.
+The application exposes Google OAuth. Keep external email magic-link UI disabled until a working
+SMTP provider is configured and verified.
 
 Current Supabase project callback:
 
