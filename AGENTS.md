@@ -90,7 +90,7 @@ Google OAuth callback for this Supabase project:
 
 `https://vctlhslzmplawvktnbgb.supabase.co/auth/v1/callback`
 
-Google OAuth is the preferred beta sign-in path. Email magic-link support exists in the app, but default Supabase SMTP should not be assumed to work for arbitrary external beta users. A custom SMTP provider can be added later if needed.
+Google OAuth is the beta sign-in path. The email magic-link UI is disabled until a custom SMTP provider is configured and verified; do not assume default Supabase SMTP works for arbitrary external beta users.
 
 ## Current Dodo Payments state
 
@@ -153,7 +153,8 @@ beta origin. The active origin is
 - Supabase Site URL is `https://priced.pricedapp.workers.dev`; its `/auth/callback`
   redirect is allowlisted. Existing-account Google sign-in, callback, sign-out,
   and re-sign-in were verified on this origin on 2026-10-06. Fresh-account
-  welcome/handle creation and external magic-link delivery remain unverified.
+  welcome/handle creation remains unverified. External magic-link UI is disabled
+  pending verified SMTP delivery.
 - `NEXT_PUBLIC_*` values are INLINED at `cf:build` time. Export them in the
   build environment before building; Worker runtime secrets never reach the
   browser. `cf:deploy` uploads the last build output and does not rebuild. See
