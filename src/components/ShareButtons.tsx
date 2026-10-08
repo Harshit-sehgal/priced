@@ -9,6 +9,7 @@ export function ShareButtons({
   priceCents,
   handle,
   saleId,
+  shareSaleId,
   unclaimed = false,
   reserved = false,
 }: {
@@ -16,6 +17,7 @@ export function ShareButtons({
   priceCents: number;
   handle: string | null;
   saleId?: string;
+  shareSaleId?: string | null;
   unclaimed?: boolean;
   reserved?: boolean;
 }) {
@@ -26,7 +28,9 @@ export function ShareButtons({
   const appUrl = (process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "")).replace(/\/$/, "");
   const path = saleId ? `/success/${saleId}` : `/domain/${encodeURIComponent(domain)}`;
   const baseShareUrl = `${appUrl}${path}`;
-  const shareUrl = `${baseShareUrl}${baseShareUrl.includes("?") ? "&" : "?"}via=share`;
+  const shareParams = new URLSearchParams({ via: "share" });
+  if (!saleId && shareSaleId) shareParams.set("shareSaleId", shareSaleId);
+  const shareUrl = `${baseShareUrl}?${shareParams.toString()}`;
   const post = saleId
     ? `I just took ${domain} for ${money(priceCents)} on Priced.\n\nnot the actual domain lol`
     : reserved

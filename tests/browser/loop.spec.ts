@@ -29,6 +29,7 @@ test.describe("full takeover loop (demo mode)", () => {
 
     // Receipt/share destination.
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
+    const saleId = new URL(page.url()).pathname.split("/").at(-1);
     await expect(page.getByText("Held by @smoketest")).toBeVisible();
     await expect(page.getByText("symbolic holder status only. Not the actual domain.")).toBeVisible();
 
@@ -42,6 +43,11 @@ test.describe("full takeover loop (demo mode)", () => {
     await expect(page).toHaveURL(new RegExp(`/domain/${domain}$`));
     await expect(page.getByText("@smoketest").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await page.getByRole("button", { name: "Copy link" }).click();
+    await expect(page.getByRole("button", { name: "Copied!", exact: true })).toBeVisible();
+    const shareUrl = await page.evaluate(() => navigator.clipboard.readText());
+    expect(new URL(shareUrl).searchParams.get("shareSaleId")).toBe(saleId);
   });
 
   test("declined payment keeps the tag unclaimed", async ({ page }) => {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { money, quoteFor } from "@/lib/game.ts";
-import { getDomain, getDomainForDisplay, getProfileByHandle, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
+import { getDomain, getDomainForDisplay, getProfileByHandle, getSale, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
 import { TakeoverCTA } from "@/components/TakeoverCTA";
 import { ShareButtons } from "@/components/ShareButtons";
 import { HistoryLedger } from "@/components/HistoryLedger";
@@ -93,16 +93,26 @@ export default async function DomainPage({ params, searchParams }: Params & { se
 
   const unclaimed = !row || !row.holderUserId;
   const reserved = reason === "reserved";
+  const latestSale = sales[0];
+  const shareSaleId = !unclaimed && !reserved && latestSale &&
+    latestSale.buyerUserId === row?.holderUserId && latestSale.domainVersion === row?.version
+    ? latestSale.id
+    : null;
   if (!reserved && searchParams) {
     const sp = await searchParams;
     if (sp.via === "share" || sp.via === "x") {
-      await persistViewEvent({
-        event: "share_visit",
-        resource: `domain:${canonical}`,
-        domain: canonical,
-        handle: row?.holderHandle ?? null,
-        props: { via: String(sp.via) },
-      });
+      const sourceSaleId = typeof sp.shareSaleId === "string" ? sp.shareSaleId : null;
+      const sourceSale = sourceSaleId ? await getSale(sourceSaleId).catch(() => null) : null;
+      if (!sourceSaleId || sourceSale?.domain === canonical) {
+        const attributedSale = sourceSale?.domain === canonical ? sourceSale : null;
+        await persistViewEvent({
+          event: "share_visit",
+          resource: `domain:${canonical}${attributedSale ? `:sale:${attributedSale.id}` : ""}`,
+          domain: canonical,
+          handle: attributedSale?.buyerHandle ?? null,
+          props: { via: String(sp.via), ...(attributedSale ? { saleId: attributedSale.id } : {}) },
+        });
+      }
     }
   }
   // Holder analytics input: a claimed, non-reserved tag render counts as a
@@ -254,6 +264,7 @@ export default async function DomainPage({ params, searchParams }: Params & { se
           domain={canonical}
           priceCents={unclaimed ? quote.nextPriceCents : row?.priceCents ?? quote.nextPriceCents}
           handle={row?.holderHandle ?? null}
+          shareSaleId={shareSaleId}
           unclaimed={unclaimed}
           reserved={reserved}
         />
