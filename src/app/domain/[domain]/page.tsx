@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { money, quoteFor } from "@/lib/game.ts";
-import { getDomain, getDomainForDisplay, getProfileByHandle, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
+import { getDomain, getDomainForDisplay, getProfileByHandle, getSale, isDomainReserved, listSalesForDomain, type RepoDomain } from "@/lib/repo";
 import { TakeoverCTA } from "@/components/TakeoverCTA";
+import { ShareButtons } from "@/components/ShareButtons";
 import { HistoryLedger } from "@/components/HistoryLedger";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { HolderCta } from "@/components/HolderCta";
@@ -76,7 +77,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   };
 }
 
-export default async function DomainPage({ params }: Params) {
+export default async function DomainPage({ params, searchParams }: Params & { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const { domain } = await params;
   const { canonical, reason, row, sales } = await loadDomain(domain);
 
@@ -92,6 +93,28 @@ export default async function DomainPage({ params }: Params) {
 
   const unclaimed = !row || !row.holderUserId;
   const reserved = reason === "reserved";
+  const latestSale = sales[0];
+  const shareSaleId = !unclaimed && !reserved && latestSale &&
+    latestSale.buyerUserId === row?.holderUserId && latestSale.domainVersion === row?.version
+    ? latestSale.id
+    : null;
+  if (!reserved && searchParams) {
+    const sp = await searchParams;
+    if (sp.via === "share" || sp.via === "x") {
+      const sourceSaleId = typeof sp.shareSaleId === "string" ? sp.shareSaleId : null;
+      const sourceSale = sourceSaleId ? await getSale(sourceSaleId).catch(() => null) : null;
+      if (!sourceSaleId || sourceSale?.domain === canonical) {
+        const attributedSale = sourceSale?.domain === canonical ? sourceSale : null;
+        await persistViewEvent({
+          event: "share_visit",
+          resource: `domain:${canonical}${attributedSale ? `:sale:${attributedSale.id}` : ""}`,
+          domain: canonical,
+          handle: attributedSale?.buyerHandle ?? null,
+          props: { via: String(sp.via), ...(attributedSale ? { saleId: attributedSale.id } : {}) },
+        });
+      }
+    }
+  }
   // Holder analytics input: a claimed, non-reserved tag render counts as a
   // tag view (best-effort, never blocks render). persistViewEvent drops bot
   // traffic and collapses repeat (IP, domain) renders — including every
@@ -233,6 +256,18 @@ export default async function DomainPage({ params }: Params) {
             </div>
           </div>
         )}
+      </section>
+
+      <section className="stack">
+        <h2 className="display display-section">Share this tag</h2>
+        <ShareButtons
+          domain={canonical}
+          priceCents={unclaimed ? quote.nextPriceCents : row?.priceCents ?? quote.nextPriceCents}
+          handle={row?.holderHandle ?? null}
+          shareSaleId={shareSaleId}
+          unclaimed={unclaimed}
+          reserved={reserved}
+        />
       </section>
 
       <section className="section-rule stack">
