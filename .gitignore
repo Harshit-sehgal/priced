@@ -16,6 +16,7 @@ worker-configuration.d.ts
 *.log
 .commandcode/
 .freebuff/
+.claude/settings.local.json
 .owner-reference.local.md
 tsconfig.tsbuildinfo
 *.tsbuildinfo
