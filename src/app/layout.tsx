@@ -1,6 +1,12 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Archivo_Narrow, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/SiteHeader";
+
+// Self-hosted at build time by next/font, so the CSP's font-src 'self' holds
+// and the condensed display face no longer depends on what the OS ships.
+const display = Archivo_Narrow({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-display-family", display: "swap" });
+const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "600", "700"], variable: "--font-mono-family", display: "swap" });
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -16,11 +22,14 @@ export const metadata: Metadata = {
     siteName: "Priced",
     type: "website",
   },
+  twitter: { card: "summary_large_image" },
 };
+
+export const viewport: Viewport = { themeColor: "#f4f1ea" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${display.variable} ${mono.variable}`}>
       <body>
         <SiteHeader />
         <main className="shell" style={{ paddingTop: "var(--space-6)", paddingBottom: "var(--space-7)" }}>

@@ -30,7 +30,7 @@ test.describe("full takeover loop (demo mode)", () => {
     // Receipt/share destination.
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
     const saleId = new URL(page.url()).pathname.split("/").at(-1);
-    await expect(page.getByText("Held by @smoketest")).toBeVisible();
+    await expect(page.getByText("@smoketest now holds it")).toBeVisible();
     await expect(page.getByText("symbolic holder status only. Not the actual domain.")).toBeVisible();
 
     // Share artifacts (§36).
@@ -42,7 +42,9 @@ test.describe("full takeover loop (demo mode)", () => {
     await page.getByRole("link", { name: "Defend it · view the tag" }).click();
     await expect(page).toHaveURL(new RegExp(`/domain/${domain}$`));
     await expect(page.getByText("@smoketest").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
+    // The holder sees their own state, not an offer form against themselves.
+    await expect(page.getByText("You hold this tag.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toHaveCount(0);
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.getByRole("button", { name: "Copy link" }).click();
     await expect(page.getByRole("button", { name: "Copied!", exact: true })).toBeVisible();

@@ -191,7 +191,7 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 }
 .market-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1.2fr) minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 44px minmax(0, 1.2fr) minmax(0, 1fr) 7.5rem 8.5rem 4.5rem;
   gap: var(--space-4);
   align-items: center;
   padding: var(--space-3) 0;
@@ -209,7 +209,7 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .market-row .cell-holder { font-family: var(--font-mono); font-size: 13px; color: var(--ink-soft); }
 .market-row .cell-price { text-align: right; }
 @media (max-width: 640px) {
-  .market-row { grid-template-columns: 28px minmax(0, 1fr) auto auto; }
+  .market-row { grid-template-columns: 28px minmax(0, 1fr) 6.5rem 4.5rem; }
   .market-row .cell-holder { display: none; }
   .market-row .cell-price.small { display: none; } /* "next $" — full math on the domain page */
 }
@@ -240,6 +240,8 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .btn-primary:hover { background: var(--money); border-color: var(--money); color: #fff; }
 .btn-take { background: var(--money); border-color: var(--money); color: #fff; }
 .btn-take:hover { background: var(--money-ink); border-color: var(--money-ink); color: #fff; }
+/* A faded green reads as "broken": a disabled money button falls back to ink. */
+.btn-take:disabled, .btn-take:disabled:hover { background: var(--ink); border-color: var(--ink); color: var(--paper); }
 .btn-sm { padding: 7px 12px; font-size: 12.5px; border-width: 1.5px; }
 .btn-block { width: 100%; }
 
@@ -334,11 +336,16 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .calc-grid {
   display: grid;
   grid-template-columns: auto 1fr auto;
-  gap: var(--space-2) var(--space-4);
+  /* No column gap: the label/amount cells pad themselves so a total row's
+     top rule runs unbroken across all three cells. */
+  gap: var(--space-2) 0;
   font-family: var(--font-mono);
   font-size: 14px;
 }
-.calc-grid .dots { border-bottom: 1px dotted var(--rule-soft); }
+.calc-grid > :nth-child(3n + 1) { padding-right: var(--space-4); }
+.calc-grid > :nth-child(3n) { padding-left: var(--space-4); text-align: right; }
+.calc-grid .dots { border-bottom: 1px dotted var(--rule-soft); align-self: end; margin-bottom: 0.35em; }
+.calc-grid .dots.calc-total { margin-bottom: 0; align-self: stretch; border-bottom: 0; }
 .calc-total { border-top: 2px solid var(--rule); margin-top: var(--space-2); padding-top: var(--space-2); font-weight: 700; }
 
 .receipt {
@@ -359,7 +366,25 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   padding: 6px 14px;
   transform: rotate(-3deg);
   margin-bottom: var(--space-4);
+  align-self: center;
+  animation: stamp-in 160ms ease-out both;
 }
+@keyframes stamp-in {
+  from { transform: rotate(-8deg) scale(1.25); opacity: 0; }
+  to { transform: rotate(-3deg) scale(1); opacity: 1; }
+}
+.receipt .receipt-domain { margin: 0; font-size: clamp(32px, 7vw, 64px); }
+
+/* ---------- starter chips (thin market) ---------- */
+.starter-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.starter-chip {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  padding: 8px 12px; border: 1px solid var(--rule); background: var(--paper-raised);
+  text-decoration: none; color: var(--ink);
+}
+.starter-chip:hover { background: var(--ink); color: var(--paper); }
+.starter-chip:hover .muted { color: inherit; }
+.starter-chip:focus-visible { outline: 2px solid var(--money); outline-offset: 2px; }
 
 /* ---------- activity feed ---------- */
 .activity-feed { display: flex; flex-direction: column; }

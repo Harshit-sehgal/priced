@@ -59,7 +59,7 @@ test.describe("375px phone", () => {
     await expect(page).toHaveURL(/\/checkout\/mock/);
     await page.getByRole("button", { name: "Pay (succeed)" }).click();
     await expect(page).toHaveURL(/\/success\//, { timeout: 10_000 });
-    await expect(page.getByText("Held by @smoketest")).toBeVisible();
+    await expect(page.getByText("@smoketest now holds it")).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy post" })).toBeVisible();
     await expectNoHorizontalOverflow(page);
   });
@@ -114,7 +114,7 @@ test.describe("tablet", () => {
 });
 
 test.describe("long domain through the loop", () => {
-  test("claimed long domain page keeps holder chip and CTA usable", async ({ page }) => {
+  test("claimed long domain page keeps holder chip and holder state usable", async ({ page }) => {
     // Runs at the project default viewport; overflow matrix above covers sizes.
     const domain = uniqueDomain();
     await handleFor(page.request);
@@ -126,7 +126,9 @@ test.describe("long domain through the loop", () => {
     await page.getByRole("link", { name: "Defend it · view the tag" }).click();
     await expect(page).toHaveURL(new RegExp(`/domain/${domain}$`));
     await expect(page.getByText("@smoketest").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Continue with this offer" })).toBeVisible();
+    // The holder sees their own state, not an offer form against themselves.
+    await expect(page.getByText("You hold this tag.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with this offer" })).toHaveCount(0);
   });
 });
 

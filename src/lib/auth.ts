@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { getProfileById, getProfileByHandle, upsertProfile, type RepoProfile } from "./repo.ts";
-import { isHandleAllowed } from "./domains.ts";
+import { isHandleAllowed, isHandleValid } from "./domains.ts";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -59,7 +59,9 @@ export function demoViewer(): { user: SessionUser; profile: RepoProfile } {
 
 export async function claimHandle(userId: string, rawHandle: string): Promise<{ ok: true; handle: string } | { ok: false; reason: string }> {
   const handle = rawHandle.trim().toLowerCase().replace(/^@+/, "");
-  if (!isHandleAllowed(handle)) return { ok: false, reason: "INVALID_HANDLE" };
+  if (!isHandleValid(handle)) return { ok: false, reason: "INVALID_HANDLE" };
+  // Well-formed but banned/brand-like: say so instead of repeating the format rule.
+  if (!isHandleAllowed(handle)) return { ok: false, reason: "HANDLE_RESERVED" };
   const existing = await getProfileById(userId);
   if (existing) {
     if (existing.handle !== handle) return { ok: false, reason: "HANDLE_LOCKED" };

@@ -80,8 +80,8 @@ export default async function HolderAnalyticsPage({ params }: Params) {
 
       {!analytics.available ? (
         <section className="notice">
-          <strong>No datastore configured.</strong> Analytics need the production database.
-          Local demo traffic is not persisted, so there is nothing honest to show here yet.
+          <strong>Analytics aren&apos;t available here.</strong> This environment doesn&apos;t keep
+          traffic records, so there is nothing honest to show yet.
         </section>
       ) : !hasAny ? (
         <section className="notice">

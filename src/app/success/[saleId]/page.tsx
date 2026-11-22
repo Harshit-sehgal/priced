@@ -90,12 +90,20 @@ export default async function SuccessPage({ params, searchParams }: Params & { s
       <LiveRefresh />
       <section className="receipt stack">
         <span className="stamp">{stillHolder ? "Tag taken" : "Receipt"}</span>
-        <p className="eyebrow" style={{ margin: 0 }}>
+        <h1
+          className="display display-domain receipt-domain"
+          // Long names shrink rather than split mid-word inside the card.
+          style={sale.domain.length > 14 ? { fontSize: `clamp(22px, ${Math.max(3, 70 / sale.domain.length).toFixed(1)}vw, 44px)` } : undefined}
+        >
           {sale.domain}
-        </p>
+        </h1>
         <div className="money money-hero">{money(sale.priceCents)}</div>
         <p style={{ margin: 0 }}>
-          Held by <span className="mono">@{sale.buyerHandle}</span>
+          {stillHolder ? (
+            <strong><span className="mono">@{sale.buyerHandle}</span> now holds it</strong>
+          ) : (
+            <>Taken by <span className="mono">@{sale.buyerHandle}</span></>
+          )}
           {sale.previousHolderHandle ? (
             <span className="muted"> · taken from @{sale.previousHolderHandle}</span>
           ) : null}

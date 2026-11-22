@@ -51,7 +51,7 @@ test.describe("holder profile", () => {
     // Demo mode: no datastore, so the page says so instead of showing zeros
     // that pretend to be data.
     await expect(
-      page.getByText(/No datastore configured|No traffic yet/),
+      page.getByText(/Analytics aren.t available here|No traffic yet/),
     ).toBeVisible();
   });
 

@@ -26,6 +26,9 @@ test("matcher excludes exactly the routes that can never act on a session", () =
     "/api/health", // hit every 15 min by the uptime workflow
     "/sitemap.xml",
     "/robots.txt",
+    "/icon.svg",
+    "/apple-icon",
+    "/opengraph-image", // homepage card
     "/domain/openai.com/opengraph-image",
     "/success/6f1e/opengraph-image",
   ]) {

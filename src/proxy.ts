@@ -46,8 +46,9 @@ export const config = {
     // so routes that can never act on a user session are excluded: the signed
     // webhook, the demo pulse/demo routes, the health probes (hit every 15
     // minutes by the uptime workflow), the crawler-only sitemap/robots files,
-    // and both generated Open Graph images — the OG routes are unauthenticated
-    // by definition and are the most crawler-heavy paths on the site.
+    // the generated icons, and the generated Open Graph images — the OG
+    // routes are unauthenticated by definition and are the most
+    // crawler-heavy paths on the site.
     // Exclusions that name ONE route are anchored with `$`; unanchored they
     // are prefixes, so a bare `api/health` would also silently exclude a
     // future `/api/health/deep` and leave it with no session. `api/webhooks`
@@ -57,6 +58,6 @@ export const config = {
     // `.*/opengraph-image$` is likewise anchored so a domain page whose slug
     // merely contains "opengraph-image" stays session-aware.
     // Everything else, including every session-bearing route, stays matched.
-    "/((?!_next/static|_next/image|favicon\\.ico$|api/webhooks/|api/market/pulse$|api/demo/|api/health$|sitemap\\.xml$|robots\\.txt$|.*/opengraph-image$).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico$|api/webhooks/|api/market/pulse$|api/demo/|api/health$|sitemap\\.xml$|robots\\.txt$|icon\\.svg$|apple-icon$|(?:.*/)?opengraph-image$).*)",
   ],
 };
