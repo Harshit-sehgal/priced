@@ -1,9 +1,13 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+import { SearchBar } from "@/components/SearchBar";
 
 // The auth proxy may refresh a session cookie before an unknown route reaches
 // the App Router. Keep the custom 404 compatible with that request-time work
 // instead of letting OpenNext fail with a static-to-dynamic error.
 export const dynamic = "force-dynamic";
+
+export const metadata: Metadata = { title: "Not found", robots: { index: false } };
 
 export default function NotFound() {
   return (
@@ -13,7 +17,8 @@ export default function NotFound() {
       <p className="muted">
         That page doesn&apos;t exist. The market does. Try a domain or head back to the leaderboard.
       </p>
-      <Link href="/" className="btn">
+      <SearchBar />
+      <Link href="/" className="btn" style={{ alignSelf: "flex-start" }}>
         Back to the market
       </Link>
     </div>

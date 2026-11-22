@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getQuote, markQuoteStatus, setQuoteCheckout } from "@/lib/repo";
+import { getDomainForDisplay, getQuote, markQuoteStatus, setQuoteCheckout } from "@/lib/repo";
 import { getViewer, demoViewer } from "@/lib/auth";
 import { getPaymentProvider, isPaymentConfigConsistent } from "@/lib/payments";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -76,6 +76,14 @@ export async function POST(req: Request) {
   if (new Date(quote.expiresAt).getTime() < Date.now()) {
     await markQuoteStatus(quote.id, "expired");
     return NextResponse.json({ error: "quote_expired" }, { status: 409 });
+  }
+  // Refuse up front once the market has moved past this quote (another tab
+  // or challenger already finalized): the takeover could never finalize, so
+  // taking the payment would only buy the buyer a refund. finalize_takeover's
+  // version check stays the authoritative guard for races after this point.
+  const live = await getDomainForDisplay(quote.domain);
+  if ((live?.version ?? 0) !== quote.expectedVersion) {
+    return NextResponse.json({ error: "quote_stale" }, { status: 409 });
   }
 
   if (isAuthConfigured) {

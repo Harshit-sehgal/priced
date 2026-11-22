@@ -31,8 +31,10 @@ function WelcomeInner() {
           HANDLE_TAKEN: "That handle is taken.",
           INVALID_HANDLE: "Handles are 3–20 characters: lowercase letters, numbers, underscore.",
           HANDLE_LOCKED: "Your handle is permanent and cannot be changed.",
+          HANDLE_RESERVED: "That handle is reserved. Pick another.",
         };
-        setError(messages[body.reason ?? ""] ?? body.error ?? "Could not save handle.");
+        const fallback = res.status === 429 ? "Too many attempts. Wait a minute and try again." : "Could not save handle.";
+        setError(messages[body.reason ?? ""] ?? fallback);
         return;
       }
       const target = typeof body.next === "string" ? sanitizeInternalPath(body.next) : next;

@@ -86,7 +86,7 @@ export default function AboutPage() {
           mechanism for that and there never will be.
         </p>
         <p className="small muted" style={{ margin: 0 }}>
-          Spend what a joke is worth to you, and not a rupee more.
+          Spend what a joke is worth to you, and not a dollar more.
         </p>
       </section>
 

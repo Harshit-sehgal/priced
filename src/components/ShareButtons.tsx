@@ -93,7 +93,7 @@ export function ShareButtons({
       </div>
       <p className="small muted" style={{ margin: 0 }}>
         {saleId
-          ? `Sharing helps new challengers find you. @${handle} · ${money(priceCents)}`
+          ? `Post it. Make the next challenger pay more. @${handle} · ${money(priceCents)}`
           : "Share this Priced tag with others. It does not represent the real domain."}
       </p>
       {copyError ? (

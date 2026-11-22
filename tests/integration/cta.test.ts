@@ -121,3 +121,8 @@ test("cta: the host actually serving the request counts as self, even if config 
     else process.env.NEXT_PUBLIC_APP_URL = previous;
   }
 });
+
+test("cta: rejects URLs carrying userinfo (host-spoofing)", () => {
+  assert.deepEqual(validateCta("Go", "https://google.com@evil.example"), { ok: false, reason: "url_invalid" });
+  assert.deepEqual(validateCta("Go", "https://user:pass@example.com"), { ok: false, reason: "url_invalid" });
+});

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { listMarket, listRecentSales, listMostContested, listFastestRising, listNewlyClaimed, marketValueCents, seedDemoMarket } from "@/lib/repo";
 import Link from "next/link";
 import { money } from "@/lib/game.ts";
@@ -6,6 +7,9 @@ import { MarketTable } from "@/components/MarketTable";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { MostContested } from "@/components/MostContested";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { evaluateDomain } from "@/lib/domains.ts";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 // Demo seed only runs when no production datastore is configured (§41).
 seedDemoMarket([
@@ -19,6 +23,11 @@ seedDemoMarket([
 
 export const dynamic = "force-dynamic";
 
+// While the market is thin, a first visitor gets one-click starting points
+// instead of a wall of empty sections.
+const STARTER_DOMAINS = ["google.com", "openai.com", "apple.com", "x.com", "github.com", "netflix.com", "reddit.com", "wikipedia.org"];
+const THIN_MARKET = 6;
+
 export default async function Home() {
   const [rows, sales, contested, rising, fresh, value] = await Promise.all([
     listMarket(25),
@@ -28,6 +37,10 @@ export default async function Home() {
     listNewlyClaimed(5),
     marketValueCents(),
   ]);
+  const held = new Set(rows.map((r) => r.domain));
+  const starters = rows.length < THIN_MARKET
+    ? STARTER_DOMAINS.filter((d) => !held.has(d) && evaluateDomain(d).eligible).slice(0, 6)
+    : [];
 
   return (
     <div className="stack-lg">
@@ -47,24 +60,45 @@ export default async function Home() {
           <h2 className="display display-section">The Market</h2>
           <p className="small muted" style={{ margin: 0 }}>
             the internet is currently worth <span className="money money-up">{money(value)}</span>*
+            {value === 0 ? " Fix that." : null}
           </p>
         </div>
-        <MarketTable rows={rows} />
+        {rows.length > 0 ? <MarketTable rows={rows} /> : null}
+        {starters.length > 0 ? (
+          <div className="stack" style={{ gap: "var(--space-2)" }}>
+            <p className="small" style={{ margin: 0 }}>
+              {rows.length === 0
+                ? "Opening bell. Every tag is $5 right now. Somebody is going to be the first name on google.com."
+                : "Still unclaimed, still $5:"}
+            </p>
+            <div className="starter-chips">
+              {starters.map((d) => (
+                <Link key={d} href={`/domain/${d}`} className="starter-chip">
+                  <span className="mono">{d}</span> <span className="small muted">$5 · unclaimed</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <p className="small muted" style={{ margin: 0 }}>
           * according to this ridiculous website, sampled from the top 1,000 tags by price. Ranked
           by current symbolic price.
         </p>
       </section>
 
-      <section className="section-rule stack">
-        <h2 className="display display-section">Most Fought Over</h2>
-        <MostContested rows={contested} />
-      </section>
+      {rows.length > 0 ? (
+        <section className="section-rule stack">
+          <h2 className="display display-section">Most Fought Over</h2>
+          <MostContested rows={contested} />
+        </section>
+      ) : null}
 
-      <section className="section-rule stack">
-        <h2 className="display display-section">Recent Takeovers</h2>
-        <ActivityFeed sales={sales} />
-      </section>
+      {sales.length > 0 ? (
+        <section className="section-rule stack">
+          <h2 className="display display-section">Recent Takeovers</h2>
+          <ActivityFeed sales={sales} />
+        </section>
+      ) : null}
 
       {rising.length > 0 ? (
         <section className="section-rule stack">

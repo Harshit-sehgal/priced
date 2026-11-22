@@ -31,9 +31,34 @@ function loadTurnstileScript(): Promise<TurnstileApi | null> {
   });
 }
 
-export function CheckoutButton({ quoteId }: { quoteId: string }) {
+// Visitor-facing wording for /api/age-confirm and /api/checkout error codes.
+// Codes in RENEWABLE mean this quote is dead and only a fresh price helps.
+const CHECKOUT_ERRORS: Record<string, string> = {
+  login_required: "Sign in again before paying.",
+  age_confirmation_unavailable: "Age confirmation is unavailable. Please try again later.",
+  age_confirmation_required: "Please confirm you are 18 or older, then try again.",
+  rate_limited: "Too many attempts. Wait a minute and try again.",
+  bot_check_failed: "We couldn't verify this browser. Reload the page and try again.",
+  quote_expired: "This price expired. Quotes last 5 minutes. Nothing was charged.",
+  quote_stale: "Someone took this tag after you got this price. Nothing was charged.",
+  quote_consumed: "This quote has already been used.",
+  quote_cancelled: "This quote was cancelled. Nothing was charged.",
+  unknown_quote: "This quote no longer exists.",
+  checkout_failed: "The payment provider didn't respond. Nothing was charged. Try again.",
+  payment_datastore_not_configured: "Payments are temporarily unavailable. Nothing was charged.",
+};
+const RENEWABLE = new Set(["quote_expired", "quote_stale", "quote_consumed", "quote_cancelled", "unknown_quote"]);
+
+class CheckoutError extends Error {
+  constructor(readonly code: string, status: number) {
+    super(CHECKOUT_ERRORS[code] ?? `Checkout failed (${status}). Please try again.`);
+  }
+}
+
+export function CheckoutButton({ quoteId, domain }: { quoteId: string; domain: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [renew, setRenew] = useState(false);
   const [adultConfirmed, setAdultConfirmed] = useState(false);
   const [ageDialogOpen, setAgeDialogOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -89,14 +114,7 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
         body: JSON.stringify({ quoteId, adultConfirmed: true }),
       });
       const ageBody = await ageRes.json().catch(() => ({}));
-      if (!ageRes.ok) {
-        const message = ageBody.error === "login_required"
-          ? "Sign in again before paying."
-          : ageBody.error === "age_confirmation_unavailable"
-            ? "Age confirmation is unavailable. Please try again later."
-            : ageBody.error ?? `age confirmation failed (${ageRes.status})`;
-        throw new Error(message);
-      }
+      if (!ageRes.ok) throw new CheckoutError(String(ageBody.error ?? ""), ageRes.status);
 
       let token: string | null = tokenRef.current;
       if (TURNSTILE_SITE_KEY) {
@@ -137,7 +155,7 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
         body: JSON.stringify({ quoteId, turnstileToken: token }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `checkout failed (${res.status})`);
+      if (!res.ok) throw new CheckoutError(String(body.error ?? ""), res.status);
       // A provider session without a redirect URL is a retryable dead end.
       // Without this branch the button stayed on "Opening checkout…" forever:
       // busy was never cleared and no error was shown.
@@ -148,9 +166,17 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
       window.location.assign(body.checkoutUrl);
     } catch (e) {
       setBusy(false);
-      setError(e instanceof Error ? e.message : "Checkout failed");
+      setRenew(e instanceof CheckoutError && RENEWABLE.has(e.code));
+      setError(e instanceof Error ? e.message : "Checkout failed. Please try again.");
     }
   }
+
+  const renewLink = renew ? (
+    <>
+      {" "}
+      <a href={`/domain/${domain}`}>Get a new price</a>
+    </>
+  ) : null;
 
   return (
     <div className="stack" style={{ gap: "var(--space-2)" }}>
@@ -192,7 +218,7 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
             />
             <span>I confirm I am 18 or older.</span>
           </label>
-          {error ? <p className="field-error small" role="alert" style={{ margin: 0 }}>{error}</p> : null}
+          {error ? <p className="field-error small" role="alert" style={{ margin: 0 }}>{error}{renewLink}</p> : null}
           <div className="row-split">
             <button
               type="button"
@@ -213,7 +239,7 @@ export function CheckoutButton({ quoteId }: { quoteId: string }) {
           </div>
         </div>
       </dialog>
-      {error && !ageDialogOpen ? <p className="field-error small" role="alert" style={{ margin: 0 }}>{error}</p> : null}
+      {error && !ageDialogOpen ? <p className="field-error small" role="alert" style={{ margin: 0 }}>{error}{renewLink}</p> : null}
     </div>
   );
 }

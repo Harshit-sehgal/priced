@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { money } from "@/lib/game.ts";
-import { getQuote } from "@/lib/repo";
+import { getDomainForDisplay, getQuote } from "@/lib/repo";
 import { nowMs } from "@/lib/time.ts";
 import { CheckoutButton } from "@/components/CheckoutButton";
 import { LiveRefresh } from "@/components/LiveRefresh";
+import { QuoteCountdown } from "@/components/QuoteCountdown";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,22 @@ export default async function TakeoverPage({ params }: Params) {
     );
   }
 
-  const expires = new Date(quote.expiresAt);
+  // The market moved since this quote (another tab or challenger finalized).
+  // Say so before the buyer pays for a takeover that can only be refunded.
+  const live = await getDomainForDisplay(quote.domain);
+  if ((live?.version ?? 0) !== quote.expectedVersion) {
+    return (
+      <div className="stack">
+        <h1 className="display display-section">This tag changed hands.</h1>
+        <p className="muted">
+          {quote.domain} was taken after you got this price
+          {live?.holderHandle ? <> and is now held by <span className="mono">@{live.holderHandle}</span></> : null}.
+          Nothing was charged.
+        </p>
+        <Link href={`/domain/${quote.domain}`} className="btn">Get a new price</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="stack-lg" style={{ maxWidth: 640 }}>
@@ -76,7 +92,7 @@ export default async function TakeoverPage({ params }: Params) {
         <div className="panel-header">
           <span className="eyebrow">Order</span>
           <span className="small muted mono">
-            expires {expires.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+            <QuoteCountdown expiresAt={quote.expiresAt} />
           </span>
         </div>
         <div className="panel-body">
@@ -94,7 +110,10 @@ export default async function TakeoverPage({ params }: Params) {
         </div>
       </section>
 
-      <CheckoutButton quoteId={quote.id} />
+      <CheckoutButton quoteId={quote.id} domain={quote.domain} />
+      <Link href={`/domain/${quote.domain}`} className="small" style={{ alignSelf: "flex-start" }}>
+        Change offer
+      </Link>
 
       <section className="notice">
         <strong>You are buying:</strong> temporary symbolic holder status for {quote.domain}&apos;s

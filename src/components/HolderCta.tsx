@@ -7,7 +7,8 @@ function isSafeCtaUrl(url: string): boolean {
   // directly-written row must never render as a javascript:/data: link.
   // React escapes text; it does not sanitize href schemes.
   try {
-    return new URL(url).protocol === "https:";
+    const u = new URL(url);
+    return u.protocol === "https:" && !u.username && !u.password;
   } catch {
     return false;
   }

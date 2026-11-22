@@ -5,6 +5,7 @@ import { getDomain, getDomainForDisplay, getProfileByHandle, getSale, isDomainRe
 import { TakeoverCTA } from "@/components/TakeoverCTA";
 import { ShareButtons } from "@/components/ShareButtons";
 import { HistoryLedger } from "@/components/HistoryLedger";
+import { SearchBar } from "@/components/SearchBar";
 import { LiveRefresh } from "@/components/LiveRefresh";
 import { HolderCta } from "@/components/HolderCta";
 import { holderCtaVisible } from "@/lib/cta";
@@ -15,6 +16,26 @@ import { demoViewer, getSessionUser, isAuthConfigured } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ domain: string }> };
+
+// Show where a holder CTA really goes, since its label is free text.
+function ctaHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "an external site";
+  }
+}
+
+// Visitor-facing wording for evaluateDomain() rejection codes.
+const REJECTION_COPY: Record<string, string> = {
+  empty: "There's nothing to price there.",
+  too_long: "That's longer than any real domain can be.",
+  idn_not_supported: "Non-Latin (internationalized) domains aren't supported yet.",
+  ip_address: "IP addresses don't get price tags. Only domain names do.",
+  localhost: "Local and private hostnames can't be priced.",
+  malformed: "That doesn't look like a domain. Try something like google.com.",
+  unsupported_suffix: "That ending isn't a public domain suffix we can price.",
+};
 
 // Provenance ledger page size. The ledger is labelled truncated when the slice
 // is full, so its totals and "oldest" line are never presented as all-time.
@@ -56,7 +77,7 @@ async function loadDomain(raw: string): Promise<{ canonical: string | null; reas
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { domain } = await params;
   const { canonical, reason, row } = await loadDomain(domain);
-  if (!canonical) return { title: "Unknown domain" };
+  if (!canonical) return { title: "Unknown domain", robots: { index: false, follow: true } };
   if (reason === "reserved") {
     return {
       title: `${canonical} is reserved`,
@@ -75,6 +96,7 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title: `${canonical} is ${money(row.priceCents)} · held by @${row.holderHandle}`,
     description: `@${row.holderHandle} currently holds the ${canonical} tag on Priced for ${money(row.priceCents)}. Not the actual domain.`,
+    alternates: { canonical: `/domain/${canonical}` },
   };
 }
 
@@ -86,8 +108,12 @@ export default async function DomainPage({ params, searchParams }: Params & { se
     return (
       <div className="stack">
         <h1 className="display display-section">That&apos;s not a domain we can price.</h1>
-        <p className="muted">Rejected input: <span className="mono">{reason}</span></p>
-        <Link href="/" className="btn">Back to the market</Link>
+        <p className="muted" style={{ margin: 0, overflowWrap: "anywhere" }}>
+          <span className="mono">&ldquo;{safeDecodeURIComponent(domain).slice(0, 80)}&rdquo;</span>{" "}
+          {REJECTION_COPY[reason] ?? REJECTION_COPY.malformed}
+        </p>
+        <SearchBar />
+        <Link href="/" className="btn" style={{ alignSelf: "flex-start" }}>Back to the market</Link>
       </div>
     );
   }
@@ -140,7 +166,8 @@ export default async function DomainPage({ params, searchParams }: Params & { se
       ? (isAuthConfigured ? getSessionUser().catch(() => null) : Promise.resolve(demoViewer().user))
       : Promise.resolve(null),
   ]);
-  const canShare = !!shareSaleId && viewer?.id === row?.holderUserId;
+  const youHold = !!viewer && !unclaimed && viewer.id === row?.holderUserId;
+  const canShare = !!shareSaleId && youHold;
   const quote = quoteFor({
     domain: canonical,
     holder: row?.holderHandle ?? null,
@@ -202,8 +229,9 @@ export default async function DomainPage({ params, searchParams }: Params & { se
                 {holderCtaVisible(holderProfile) && holderProfile?.ctaLabel && holderProfile?.ctaUrl ? (
                   <div className="stack" style={{ gap: "var(--space-1)" }}>
                     <HolderCta label={holderProfile.ctaLabel} url={holderProfile.ctaUrl} handle={holderProfile.handle} />
-                    <span className="small muted" style={{ fontSize: 11 }}>
-                      the holder&apos;s link, not {canonical}&apos;s
+                    <span className="small muted" style={{ fontSize: 11, overflowWrap: "anywhere" }}>
+                      goes to <span className="mono">{ctaHost(holderProfile.ctaUrl)}</span> · the
+                      holder&apos;s link, not {canonical}&apos;s
                     </span>
                   </div>
                 ) : null}
@@ -224,12 +252,21 @@ export default async function DomainPage({ params, searchParams }: Params & { se
                   <span className="money money-big money-up">{money(quote.nextPriceCents)}</span>
                   <span className="small muted">minimum offer; previous holder gets nothing</span>
                 </div>
-                <TakeoverCTA
-                  domain={canonical}
-                  priceCents={quote.nextPriceCents}
-                  kind="takeover"
-                  expectedVersion={row!.version}
-                />
+                {youHold ? (
+                  <p style={{ margin: 0 }}>
+                    <strong>You hold this tag.</strong>{" "}
+                    <span className="muted">
+                      Anyone who wants it now has to pay at least {money(quote.nextPriceCents)}.
+                    </span>
+                  </p>
+                ) : (
+                  <TakeoverCTA
+                    domain={canonical}
+                    priceCents={quote.nextPriceCents}
+                    kind="takeover"
+                    expectedVersion={row!.version}
+                  />
+                )}
               </div>
             </div>
 
@@ -247,11 +284,11 @@ export default async function DomainPage({ params, searchParams }: Params & { se
                   <span className="dots" />
                   <span className="money">{money(quote.percentIncrementCents)}</span>
 
-                  <span>Minimum increase</span>
+                  <span>Minimum increase ($5 floor)</span>
                   <span className="dots" />
                   <span className="money">{money(quote.minimumIncrementCents)}</span>
 
-                  <span className="calc-total">Required increase</span>
+                  <span className="calc-total">Required increase (the larger)</span>
                   <span className="dots calc-total" />
                   <span className="money calc-total">{money(quote.requiredIncrementCents)}</span>
 
@@ -277,16 +314,18 @@ export default async function DomainPage({ params, searchParams }: Params & { se
         </section>
       ) : null}
 
-      <section className="section-rule stack">
-        <h2 className="display display-section">Tag History</h2>
-        <HistoryLedger sales={sales} truncated={sales.length >= LEDGER_PAGE_SIZE} />
-      </section>
+      {reserved && sales.length === 0 ? null : (
+        <section className="section-rule stack">
+          <h2 className="display display-section">Tag History</h2>
+          <HistoryLedger sales={sales} truncated={sales.length >= LEDGER_PAGE_SIZE} />
+        </section>
+      )}
 
-      <section className="notice">
+      {reserved ? null : <section className="notice">
         <strong>What is this?</strong> A paid ranking platform. Paying an accepted offer makes this
         website show your handle on{` ${canonical}'s`} price tag until someone pays a higher offer.
         You are not buying the domain, the website, or anything it represents.
-      </section>
+      </section>}
     </div>
   );
 }

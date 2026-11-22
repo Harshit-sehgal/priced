@@ -8,6 +8,18 @@ import { confirmAdultAndContinue, handleFor, uniqueDomain } from "./helpers";
  * and missing entities. The X card validator itself remains an owner step.
  */
 test.describe("OG cards", () => {
+  test("homepage card and icons render and are linked from the page", async ({ page, request }) => {
+    await page.goto("/");
+    const og = await page.locator('meta[property="og:image"]').getAttribute("content");
+    expect(og).toContain("/opengraph-image");
+    await expect(page.locator('link[rel="icon"]')).toHaveCount(1);
+    for (const path of ["/opengraph-image", "/apple-icon", "/icon.svg"]) {
+      const res = await request.get(path);
+      expect(res.status(), path).toBe(200);
+      expect(res.headers()["content-type"]).toMatch(/image\/(png|svg)/);
+    }
+  });
+
   test("claimed domain card renders a PNG", async ({ request }) => {
     const res = await request.get("/domain/google.com/opengraph-image");
     expect(res.status()).toBe(200);

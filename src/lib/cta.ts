@@ -30,6 +30,8 @@ export function validateCta(rawLabel: unknown, rawUrl: unknown, extraSelfHosts: 
     return { ok: false, reason: "url_invalid" };
   }
   if (parsed.protocol !== "https:") return { ok: false, reason: "url_invalid" };
+  // https://google.com@evil.com displays as google.com but goes to evil.com.
+  if (parsed.username || parsed.password) return { ok: false, reason: "url_invalid" };
   if (url.length > 300) return { ok: false, reason: "url_too_long" };
 
   // The CTA must not point back into Priced itself. The mild reading is
